@@ -1,78 +1,80 @@
 # Azazel-Zero
 
-## コンセプト
-**Azazel-Zero** は、Raspberry Pi Zero 2 W を基盤とした  
-「身代わり防壁（Substitute Firewall）」の実装試みである。  
+[English](/README.md) | [日本語](/README_JA.md)
 
-信用できないネットワーク（例：公共Wi-Fi）に接続する際、  
-端末本体を直接晒さず **物理的デコイ** を介在させることで、  
-攻撃を一手に引き受け、遅滞行動によって利用者を守る。  
+## Concept
+**Azazel-Zero** is a prototype of a **"Substitute Firewall"** implemented on Raspberry Pi Zero 2 W.  
 
-Azazel-Pi が論理的な遅滞・誘導を行う「ゲートウェイ防壁」であったのに対し、  
-Azazel-Zero は「持ち歩ける物理盾」としての性格を強めている。
+This system is designed to **practically realize the delaying action of the Azazel System**.  
+At the same time, it returns to the original concepts of the Azazel System: the ideas of a **"Substitute Firewall"** and a **"Firewall Maze"**.  
+
+### Comparison with Azazel-Pi
+- **Azazel-Pi**  
+  - Built on Raspberry Pi 5 as a **Portable Security Gateway (Cyber Scapegoat Gateway)**.  
+  - Designed as a **concept model** targeting the **low-cost protection of small-scale and temporary networks**.  
+  - Experimental in nature, serving as a testbed for multiple technical elements.  
+
+- **Azazel-Zero**  
+  - A **lightweight version** stripped of unnecessary features, designed for real-world operation.  
+  - Built as a **portable physical shield**, prioritizing mobility and practicality.  
+  - Unlike the concept-model Azazel-Pi, Azazel-Zero is positioned as a **field-ready practical model**.  
 
 ---
 
-## 設計思想
-- **携帯性**：胸ポケットに収まるサイズと重量  
-- **不可避性**：端末と外部ネットの間に強制的に介在  
-- **単純操作**：USBを挿すだけで防壁が成立  
-- **遅滞行動**：攻撃者に時間を浪費させる（Azazel Systemの共通思想）  
+## Design Principles
+- **Portability**: Small enough to fit in a breast pocket  
+- **Inevitability**: Forces itself between the device and the external network  
+- **Simplicity**: Insertion of USB establishes the firewall  
+- **Delaying Action**: Wastes the attacker’s time (a core concept of the Azazel System)  
 
 ---
 
-## 実装構成
+## Implementation
 
-### 基盤
+### Base
 - **Raspberry Pi Zero 2 W**
 
-### ネットワーク
-- **USB OTG Gadget モード**
-  - 電力供給＋仮想ネットワークを1本のUSBケーブルで実現
-  - ノートPCからの給電で即稼働可能
+### Networking
+- **USB OTG Gadget Mode**
+  - Provides both power supply and virtual network via a single USB cable  
+  - Runs immediately when powered by a laptop  
 
-### 防御機能（軽量版）
-- **iptables/nftables** による遮断・遅延制御  
-- **tc (Traffic Control)** による通信遅延・パケット揺らぎ挿入  
-- **カスタムPythonスクリプト**による動的制御と通知  
+### Defense Functions (Lightweight)
+- Blocking and delaying with **iptables/nftables**  
+- Network delay and jitter insertion with **tc (Traffic Control)**  
+- Dynamic control and notification with **custom Python scripts**  
 
-### ステータス表示
-- **電子ペーパー (E-Ink)**  
-  - 携帯性優先: 2.13インチ モノクロ (250×122)  
-  - 展示映え特化: 2.13インチ 3色 (赤黒白)  
-  - UIは脅威レベル・アクション・RTT・Queue・キャプティブ検知などを簡潔表示  
-
----
-
-## AI的要素の可能性
-
-### 制約
-- Zero 2 WはCPU・RAMが限定的 → 大規模AIは不可  
-- GPUによる加速も期待できない  
-
-### 現実的な導入案
-- **軽量機械学習モデル**
-  - scikit-learnベースの異常検知（Isolation Forest, one-class SVM, k-meansなど）  
-  - 小規模サンプルを扱うなら実用可能  
-- **TinyML (TensorFlow Lite)**  
-  - 事前学習済みの小型モデルをZeroで推論  
-  - 「通常通信 vs 攻撃通信」の分類程度は実装できる  
-- **ハイブリッド方式**
-  - iptablesで基本防御  
-  - MLで「怪しい通信」を補助的に表示  
-
-### 位置付け
-Azazel-Zeroは「携帯防壁」であり、AIは必須ではない。  
-しかし **軽量機械学習を組み合わせることで “学習する盾” として発展可能** である。  
+### Status Display
+- **E-Paper (E-Ink)**  
+  - Uses a 2.13-inch monochrome (250×122) display  
+  - UI shows threat level, actions, RTT, queue status, and captive portal detection in a concise format  
 
 ---
 
-## 構築手順（概要）
+## AI Elements (Research Topic)
+Azazel-Zero is designed as a lightweight firewall, and AI is not essential.  
+However, considering current trends and technological potential, it is worth examining **as a research topic**.  
 
-1. **Raspberry Pi OS Lite (64bit)** を導入  
-2. **USB Gadget モード設定**  
-   - `/boot/config.txt` に `dtoverlay=dwc2`  
-   - `/boot/cmdline.txt` に `modules-load=dwc2,g_ether`  
-3. **電子ペーパー制御ライブラリ**を導入（例: Waveshare Pythonライブラリ）  
-4. **UIスクリプト**を作成し、脅威レベルや遅滞状況を表示  
-5. **systemdサービス化**して起動時に防壁＋UIが稼働  
+- **Limitations**  
+  - Zero 2 W has limited CPU and RAM; large-scale AI is not feasible  
+  - No GPU acceleration  
+
+- **Possibilities**  
+  - Lightweight ML models with scikit-learn (e.g., anomaly detection: Isolation Forest, one-class SVM)  
+  - Small-scale inference with TensorFlow Lite (e.g., classifying normal vs. attack traffic)  
+
+- **Positioning**  
+  - Not implemented at present  
+  - Potential for future expansion into a **"learning shield"**  
+
+---
+
+## Setup Steps (Overview)
+
+1. Install **Raspberry Pi OS Lite (64bit)**  
+2. Configure **USB Gadget Mode**  
+   - Add `dtoverlay=dwc2` to `/boot/config.txt`  
+   - Add `modules-load=dwc2,g_ether` to `/boot/cmdline.txt`  
+3. Install **E-Paper control libraries** (e.g., Waveshare Python libraries)  
+4. Create a **UI script** to display threat levels and delay status  
+5. Configure as a **systemd service** so the shield and UI run at boot  
