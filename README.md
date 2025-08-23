@@ -11,13 +11,13 @@ At the same time, it returns to the original concepts of the Azazel System: the 
 ### Comparison with Azazel-Pi
 - **Azazel-Pi**  
   - Built on Raspberry Pi 5 as a **Portable Security Gateway (Cyber Scapegoat Gateway)**.  
-  - Designed as a **concept model** targeting the **low-cost protection of small-scale and temporary networks**.  
-  - Experimental in nature, serving as a testbed for multiple technical elements.  
+  - Designed as a **concept model** to provide low-cost protection for **small-scale networks temporarily constructed**.  
+  - Strongly experimental in nature, serving as a testbed for multiple technical elements.  
 
 - **Azazel-Zero**  
-  - A **lightweight version** stripped of unnecessary features, designed for real-world operation.  
-  - Built as a **portable physical shield**, prioritizing mobility and practicality.  
-  - Unlike the concept-model Azazel-Pi, Azazel-Zero is positioned as a **field-ready practical model**.  
+  - A **lightweight version**, intended for real-world operation by **limiting use cases and stripping away unnecessary features**.  
+  - Built as a **portable physical barrier**, prioritizing mobility and practicality.  
+  - Unlike the concept-model Azazel-Pi, Azazel-Zero is positioned as a **field-ready practical model**.    
 
 ---
 
