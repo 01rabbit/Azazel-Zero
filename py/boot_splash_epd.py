@@ -2,6 +2,26 @@
 import os, re, subprocess, time, sys
 from PIL import Image, ImageDraw, ImageFont
 
+# === Asset paths ===
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ASSET_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
+TITLE_FONT_PATH = os.path.join(ASSET_ROOT, "fonts", "Tamanegi_kaisyo_geki_v7.ttf")
+ICON_PATH = os.path.join(ASSET_ROOT, "icons", "wifi.png")
+ICON_H = 16   # icon height in pixels
+ICON_GAP = 8  # gap between icon and text
+
+def load_icon_1bit(path, target_h):
+    from PIL import Image
+    icon = Image.open(path).convert("RGBA")
+    w, h = icon.size
+    new_w = max(1, int(w * (target_h / h)))
+    icon = icon.resize((new_w, target_h), Image.LANCZOS)
+    # composite on white background then binarize for EPD
+    bg = Image.new("RGBA", icon.size, (255, 255, 255, 255))
+    icon = Image.alpha_composite(bg, icon).convert("L")
+    icon = icon.point(lambda p: 0 if p < 160 else 255, mode='1')
+    return icon
+
 WLAN_IFACE="wlan0"
 RETRY_SEC=30
 
@@ -25,15 +45,32 @@ def wait_network(timeout):
 
 def draw_image(ssid,ip,width=250,height=122):
     img=Image.new('1',(width,height),255); d=ImageDraw.Draw(img)
-    font_b=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",18)
-    font_m=ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",16)
+    try:
+        font_b = ImageFont.truetype(TITLE_FONT_PATH, 18)
+    except Exception:
+        font_b = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 18)
+    try:
+        font_m = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 16)
+    except Exception:
+        font_m = ImageFont.load_default()
     # タイトル反転
     t="Azazel-Zero"; tw,th=d.textsize(t,font=font_b); margin=6
     d.rectangle([(0,0),(width,th+margin*2)],fill=0)
     d.text(((width-tw)//2,margin),t,font=font_b,fill=255)
     y=th+margin*2+12
-    d.text((8,y),f"SSID: {ssid}",font=font_m,fill=0); y+=24
-    d.text((8,y),ip,font=font_m,fill=0)
+    d.text((8, y), f"SSID: {ssid}", font=font_m, fill=0); y += 24
+    # Draw IP line with icon on the left
+    x0 = 8
+    try:
+        if os.path.exists(ICON_PATH):
+            ip_icon = load_icon_1bit(ICON_PATH, ICON_H)
+            img.paste(ip_icon, (x0, y + max(0, 16 - ICON_H)//2))
+            x_text = x0 + ip_icon.size[0] + ICON_GAP
+        else:
+            x_text = x0
+    except Exception:
+        x_text = x0
+    d.text((x_text, y), ip, font=font_m, fill=0)
     return img
 
 def show_on_epd(img):
