@@ -8,6 +8,29 @@ Azazel-Zeroでは、起動時に無線LANのSSIDとIPアドレスを電子ペー
 
 ## 必要な依存関係
 
+### ハードウェア接続（20ピン GPIO ヘッダ利用）
+
+本機能で利用する Waveshare 製 E-Paper モジュールは、Raspberry Pi Zero の 20 ピン GPIO ヘッダ経由で接続します。  
+以下の条件を事前に満たしてください。
+
+- **SPI 有効化**:  
+  `sudo raspi-config` → 「Interface Options」→「SPI」を有効化してください。
+
+- **接続ピン例 (2.13inch e-Paper HAT)**  
+  
+  | e-Paper ピン | Raspberry Pi GPIO ピン |
+  |--------------|------------------------|
+  | VCC          | 3.3V (ピン1)           |
+  | GND          | GND (ピン6)            |
+  | DIN          | MOSI (GPIO10, ピン19)  |
+  | CLK          | SCLK (GPIO11, ピン23)  |
+  | CS           | CE0  (GPIO8, ピン24)   |
+  | DC           | GPIO25 (ピン22)        |
+  | RST          | GPIO17 (ピン11)        |
+  | BUSY         | GPIO24 (ピン18)        |
+
+> モジュールによって配線が異なる場合があるため、使用する e-Paper の公式マニュアルも併せて確認してください。
+
 以下のパッケージやライブラリが必要です。インストール手順例を示します。
 
 ### apt-get でインストール
@@ -27,12 +50,36 @@ pip3 install pillow
 
 ### git でドライバ取得（例: waveshare の EPD ライブラリ）
 
+> 再現性のため、ドライバは `/opt/waveshare-epd` に固定配置します。
+
 ```sh
-cd ~
-git clone https://github.com/waveshare/e-Paper
+sudo mkdir -p /opt
+cd /opt
+sudo git clone https://github.com/waveshare/e-Paper waveshare-epd
+# （任意）piユーザで実行する場合は所有権を合わせる
+sudo chown -R pi:pi /opt/waveshare-epd
 ```
 
-（ご利用のディスプレイに応じて適切なリポジトリ・ドライバを選択してください。）
+#### インポートパスの設定
+
+`/home/pi/Azazel-Zero/py/boot_splash_epd.py` から確実にライブラリを参照できるよう、以下のいずれかを設定してください。
+
+- **A) systemd 環境変数で PYTHONPATH を指定（推奨）**  
+  例のユニットファイルに次の行を追加：
+
+  ```ini
+  Environment=PYTHONPATH=/opt/waveshare-epd:/opt/waveshare-epd/python
+  ```
+
+- **B) スクリプト側で `sys.path` を拡張**  
+  `boot_splash_epd.py` の先頭付近に追記：
+  
+  ```python
+  import sys
+  sys.path.extend(["/opt/waveshare-epd", "/opt/waveshare-epd/python"])
+  # 以降、あなたのディスプレイに合わせてドライバをインポート
+  # from waveshare_epd import epd2in13_V4 など
+  ```
 
 ## スクリプト配置と単発テスト
 
@@ -71,6 +118,7 @@ After=network.target
 [Service]
 Type=simple
 User=pi
+Environment=PYTHONPATH=/opt/waveshare-epd:/opt/waveshare-epd/python
 ExecStart=/usr/bin/python3 /home/pi/Azazel-Zero/py/boot_splash_epd.py
 WorkingDirectory=/home/pi/Azazel-Zero/py
 Restart=no

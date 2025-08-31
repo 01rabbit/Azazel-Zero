@@ -1,6 +1,6 @@
 # Azazel-Zero
 
-[English](/README.md) | [日本語](/README_JA.md)
+[English](/README.md) | [日本語](/README_ja.md)
 
 ## コンセプト
 
@@ -89,7 +89,9 @@ Azazel-Zero は軽量ファイアウォールとして設計されており、AI
 4. 脅威レベルや遅延状況を表示する **UIスクリプト** を作成  
 5. **systemdサービス**としてシールド・UIが起動時に自動起動するよう設定
 
-### 起動時E-Paperスプラッシュ（Azazel-Zero、リポジトリ: ~/Azazel-Zero）
+## 起動時E-Paperスプラッシュ（Azazel-Zero、リポジトリ: ~/Azazel-Zero）
+
+※ 詳細なセットアップ手順は [Boot-E-Paper_Splash](/docs/Boot_E-Paper_Splash_ja.md)を参照してください。
 
 起動時にWaveshare製E-Paperへ **SSID** および **IPv4** を表示します。  
 スクリプト: `py/boot_splash_epd.py`

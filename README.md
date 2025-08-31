@@ -1,6 +1,6 @@
 # Azazel-Zero
 
-[English](/README.md) | [日本語](/README_JA.md)
+[English](/README.md) | [日本語](/README_ja.md)
 
 ## Concept
 
@@ -89,7 +89,9 @@ However, considering current trends and technological potential, it is worth exa
 4. Create a **UI script** to display threat levels and delay status  
 5. Configure as a **systemd service** so the shield and UI run at boot  
 
-### Boot E-Paper Splash (Azazel-Zero, repo in ~/Azazel-Zero)
+## Boot E-Paper Splash (Azazel-Zero, repo in ~/Azazel-Zero)
+
+※ For detailed setup instructions, please refer to [Boot_E-Paper_Splash.md](/docs/Boot_E-Paper_Splash.md).
 
 At boot, shows **SSID** and **IPv4** on a Waveshare e-Paper.  
 Script: `py/boot_splash_epd.py`
