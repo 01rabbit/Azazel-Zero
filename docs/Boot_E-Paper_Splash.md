@@ -113,15 +113,16 @@ To run automatically at startup, register it as a systemd service.
 ```ini
 [Unit]
 Description=Azazel-Zero E-Paper Boot Splash
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-Environment=PYTHONPATH=/opt/waveshare-epd:/opt/waveshare-epd/python
-ExecStart=/usr/bin/python3 /home/pi/Azazel-Zero/py/boot_splash_epd.py
-WorkingDirectory=/home/pi/Azazel-Zero/py
-Restart=no
+User=azazel
+Environment=PYTHONPATH=/opt/waveshare-epd/RaspberryPi_JetsonNano/python:/opt/waveshare-epd/RaspberryPi_JetsonNano/python/lib
+ExecStart=/usr/bin/python3 /home/azazel/Azazel-Zero/py/boot_splash_epd.py
+WorkingDirectory=/home/azazel/Azazel-Zero/py
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target

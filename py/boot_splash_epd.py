@@ -74,10 +74,32 @@ def draw_image(ssid,ip,width=250,height=122):
     return img
 
 def show_on_epd(img):
-    sys.path.append("/opt/waveshare-epd/RaspberryPi_JetsonNano/python")
-    from waveshare_epd import epd2in13_V4 as drv  # ←V4が無ければ V3/V2 に変更
-    epd=drv.EPD(); epd.init()
-    epd.display(epd.getbuffer(img))
+    # Ensure Waveshare Python paths are searchable
+    ws_root = "/opt/waveshare-epd/RaspberryPi_JetsonNano/python"
+    ws_lib  = "/opt/waveshare-epd/RaspberryPi_JetsonNano/python/lib"
+    for p in (ws_root, ws_lib):
+        if p not in sys.path:
+            sys.path.append(p)
+
+    # Try mono driver first, then bicolor V4 as fallback
+    BICOLOR = False
+    try:
+        from waveshare_epd import epd2in13_V4 as drv
+    except Exception:
+        from waveshare_epd import epd2in13b_V4 as drv
+        BICOLOR = True
+
+    epd = drv.EPD()
+    epd.init()
+
+    if BICOLOR:
+        # For bicolor panels, send black layer plus an empty red layer
+        from PIL import Image
+        red = Image.new('1', img.size, 255)
+        epd.display(epd.getbuffer(img), epd.getbuffer(red))
+    else:
+        epd.display(epd.getbuffer(img))
+
     epd.sleep()
 
 def main():

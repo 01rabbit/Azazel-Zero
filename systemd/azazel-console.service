@@ -1,0 +1,13 @@
+[Unit]
+Description=Azazel-Zero persistent tmux console
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=azazel
+ExecStart=/home/azazel/Azazel-Zero/bin/azazel_console.sh
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
