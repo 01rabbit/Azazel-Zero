@@ -1,0 +1,16 @@
+[Unit]
+Description=OpenCanary Honeypot (venv)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=azazel
+EnvironmentFile=/etc/default/azazel-zero
+Environment=VIRTUAL_ENV=%E{AZAZEL_CANARY_VENV}
+Environment=PATH=%E{AZAZEL_CANARY_VENV}/bin:/usr/bin:/bin
+ExecStart=%E{AZAZEL_CANARY_VENV}/bin/opencanaryd --start
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

@@ -4,10 +4,10 @@
 
 ## Concept
 
-**Azazel-Zero** is a prototype of a **"Substitute Firewall"** implemented on Raspberry Pi Zero 2 W.  
+**Azazel-Zero** is a prototype of a **"Substitute Barrier"** implemented on Raspberry Pi Zero 2 W.  
 
 This system is designed to **practically realize the delaying action of the Azazel System**.  
-At the same time, it returns to the original concepts of the Azazel System: the ideas of a **"Substitute Firewall"** and a **"Firewall Maze"**.  
+At the same time, it returns to the original concepts of the Azazel System: the ideas of a **"Substitute Barrier"** and a **"Barrier Maze"**.  
 
 ### Comparison with Azazel-Pi
 

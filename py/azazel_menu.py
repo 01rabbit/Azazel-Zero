@@ -1,5 +1,3 @@
-
-
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
@@ -28,14 +26,26 @@ DELAY_TOOL = ["/usr/bin/python3", os.path.join(HERE, "delay_tool.py")]  # if not
 # Optional: e-paper refresh script (non-fatal if missing)
 EPAPER = ["/usr/bin/python3", os.path.join(HERE, "boot_splash_epd.py")]
 
-# Menu entries: (label, command or None)
-MENU: List[Tuple[str, Optional[List[str]]]] = [
-    ("Wi‑Fi Selector (ssid_list.py)", SSID_TOOL),
-    ("Delay Control Tool (coming soon)", DELAY_TOOL if os.path.exists(DELAY_TOOL[-1]) else None),
-    ("Exit", None),
-]
 
 HELP = "↑/↓ or j/k: move   Enter: run   r: redraw   q: quit"
+
+def _bin_cmd(name):
+    here = os.path.abspath(os.path.join(HERE, os.pardir, "bin", name))
+    usrlocal = os.path.join("/usr/local/bin", name)
+    return [usrlocal] if os.path.exists(usrlocal) else [here]
+
+MENU = [
+    ("Wi-Fi Selector (ssid_list.py)", SSID_TOOL),
+    ("Delay: enable (egress only)", _bin_cmd("delay_on.sh")),
+    ("Delay: disable", _bin_cmd("delay_off.sh")),
+    ("Mode: Portal", _bin_cmd("portal_mode.sh")),
+    ("Mode: Shield", _bin_cmd("shield_mode.sh")),
+    ("Mode: Lockdown", _bin_cmd("lockdown_mode.sh")),
+    ("OpenCanary: start", ["/bin/sh","-lc","sudo systemctl start opencanary.service"]),
+    ("OpenCanary: stop",  ["/bin/sh","-lc","sudo systemctl stop opencanary.service"]),
+    ("OpenCanary: hits (tail)", ["/bin/sh","-lc","sudo journalctl -u opencanary.service -f || tail -F /var/log/opencanary.log"]),
+    ("Exit", None),
+]
 
 
 def _exists(cmd: List[str]) -> bool:
