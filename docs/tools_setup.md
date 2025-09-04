@@ -1,6 +1,6 @@
 # Azazel‑Zero: Installation and Initial Setup of Required Tools
 
----
+[English](/docs/tools_setup.md) | [日本語](/docs/tools_setup_ja.md)
 
 ## Basic Package Installation
 

@@ -1,6 +1,6 @@
 # Azazel‑Zero: 必要ツールのインストールと初期設定
 
----
+[English](/docs/tools_setup.md) | [日本語](/docs/tools_setup_ja.md)
 
 ## 基本パッケージのインストール
 
@@ -54,28 +54,13 @@ outputs:
         - tls
 ```
 
-### 設定
+ルールの更新を行い、Suricataサービスを有効化・起動します。
 
-1. 設定ファイルを編集してネットワークインターフェースを指定します。
-
-    ```bash
-    sudo nano /etc/suricata/suricata.yaml
-    ```
-
-    `af-packet` セクションの `interface` を監視したいインターフェース名（例: `eth0`）に変更してください。
-
-2. ルールの更新
-
-    ```bash
-    sudo suricata-update
-    ```
-
-3. Suricataサービスを有効化・起動
-
-    ```bash
-    sudo systemctl enable suricata
-    sudo systemctl start suricata
-    ```
+```bash
+sudo suricata-update
+sudo systemctl enable suricata
+sudo systemctl start suricata
+```
 
 ---
 
