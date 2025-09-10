@@ -21,7 +21,9 @@ AZAZEL_CANARY_VENV=/home/azazel/canary-venv
 EOF
 
 # systemd unit を配置
+sudo install -m 0644 "${ROOT}/systemd/azazel-boot-splash.service" /etc/systemd/system/
 sudo install -m 0644 "${ROOT}/systemd/azazel-console.service" /etc/systemd/system/
+sudo install -m 0644 "${ROOT}/systemd/azazel-epd.service"     /etc/systemd/system/
 sudo install -m 0644 "${ROOT}/systemd/suri-epaper.service"    /etc/systemd/system/
 sudo install -m 0644 "${ROOT}/systemd/opencanary.service"     /etc/systemd/system/
 

@@ -75,6 +75,12 @@ if [[ "$WITH_EPD" -eq 1 ]]; then
   # pip3 install --no-cache-dir --upgrade pillow numpy
 fi
 
+# Ensure en_US.UTF-8 locale exists (needed for tmux/emoji)
+if ! locale -a | grep -q 'en_US.utf8'; then
+  log "Generating en_US.UTF-8 locale"
+  localedef -i en_US -f UTF-8 en_US.UTF-8 || true
+fi
+
 # Finish
 log "Base dependencies installed."
 if [[ "$WITH_CANARY" -eq 1 ]]; then

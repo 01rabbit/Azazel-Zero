@@ -1,0 +1,16 @@
+[Unit]
+Description=Azazel EPD Boot/Shutdown Animations
+DefaultDependencies=no
+Before=graphical.target shutdown.target
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /opt/azazel/bin/boot_splash_epd.py --mode start --steps 10 --frame-sec 0.25
+ExecStartPost=/usr/bin/python3 /opt/azazel/bin/boot_splash_epd.py --mode info
+ExecStop=/usr/bin/python3 /opt/azazel/bin/boot_splash_epd.py --mode shutdown
+TimeoutStopSec=12
+
+[Install]
+WantedBy=multi-user.target

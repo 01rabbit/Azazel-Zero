@@ -14,6 +14,223 @@ import subprocess
 import sys
 from typing import List, Tuple, Optional
 
+# ===== Network status helpers and header renderer =====
+import shlex
+
+def _sh(cmd: str) -> str:
+    try:
+        out = subprocess.check_output(shlex.split(cmd), stderr=subprocess.DEVNULL, timeout=1.5)
+        return out.decode().strip()
+    except Exception:
+        return ""
+
+def _ip4_addr(iface: str) -> str:
+    out = _sh(f"ip -4 addr show {iface}")
+    for line in out.splitlines():
+        line = line.strip()
+        if line.startswith("inet "):
+            return line.split()[1].split("/")[0]
+    return ""
+
+def _default_gw_iface() -> str:
+    out = _sh("ip route get 8.8.8.8")
+    parts = out.split()
+    if "dev" in parts:
+        try:
+            return parts[parts.index("dev") + 1]
+        except Exception:
+            pass
+    return ""
+
+def _ssid_and_bssid() -> Tuple[str, str]:
+    ssid = _sh("iwgetid -r")
+    if not ssid:
+        st = _sh("wpa_cli status")
+        for ln in st.splitlines():
+            if ln.startswith("ssid="):
+                ssid = ln.split("=", 1)[1].strip()
+                break
+    bssid = ""
+    st = _sh("wpa_cli status")
+    for ln in st.splitlines():
+        if ln.startswith("bssid="):
+            bssid = ln.split("=", 1)[1].strip()
+            break
+    return ssid or "—", bssid or "—"
+
+def _dnsmasq_leases_path() -> str:
+    for p in ("/var/lib/misc/dnsmasq.leases", "/var/lib/dnsmasq/dnsmasq.leases"):
+        if os.path.exists(p):
+            return p
+    return ""
+
+def _latest_usb_client_ip() -> str:
+    path = _dnsmasq_leases_path()
+    if not path:
+        return ""
+    try:
+        last = ""
+        with open(path, "r") as f:
+            for line in f:
+                parts = line.strip().split()
+                if len(parts) >= 3:
+                    last = parts[2]
+        return last
+    except Exception:
+        return ""
+
+def get_net_status() -> dict:
+    gw_if = _default_gw_iface() or "wlan0"
+    ssid, bssid = _ssid_and_bssid()
+    wlan_ip = _ip4_addr("wlan0") or "—"
+    usb_ip = _ip4_addr("usb0") or "—"
+    lap_ip = _latest_usb_client_ip() or "—"
+    rssi = _wifi_rssi_dbm()
+    net_ok = _route_alive()
+    captive = _captive_portal()
+    return {
+        "gw_if": gw_if or "—",
+        "ssid": ssid,
+        "bssid": bssid,
+        "wlan_ip": wlan_ip,
+        "usb_ip": usb_ip,
+        "laptop_ip": lap_ip,
+        "rssi_dbm": rssi,
+        "net_ok": net_ok,
+        "captive": captive,
+    }
+
+def _supports_emoji() -> bool:
+    return "UTF-8" in (os.environ.get("LANG", "") + os.environ.get("LC_CTYPE", ""))
+
+def _wifi_rssi_dbm() -> Optional[int]:
+    out = _sh("iw dev wlan0 link")
+    for ln in out.splitlines():
+        ln = ln.strip().lower()
+        # e.g., "signal: -43 dBm"
+        if ln.startswith("signal:") and "dbm" in ln:
+            try:
+                val = int(ln.split()[1])
+                return val
+            except Exception:
+                return None
+    return None
+
+def _route_alive() -> bool:
+    # fast ICMP probe to default route target
+    try:
+        return subprocess.call(["ping", "-c1", "-W1", "8.8.8.8"],
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0
+    except Exception:
+        return False
+
+def _captive_portal() -> Optional[bool]:
+    # True if captive likely, False if open internet, None if unknown
+    try:
+        out = subprocess.check_output(
+            ["curl", "-sI", "http://connectivitycheck.gstatic.com/generate_204"],
+            stderr=subprocess.DEVNULL, timeout=1.5
+        ).decode("utf-8", "ignore").splitlines()
+        for ln in out:
+            if ln.lower().startswith("http/"):
+                # HTTP/1.1 204 No Content or HTTP/2 204
+                parts = ln.split()
+                if len(parts) >= 2 and parts[1] == '204':
+                    return False  # not captive
+                # 30x or other status implies captive or intercept
+                try:
+                    code = int(parts[1])
+                    return True if 300 <= code < 400 else True
+                except Exception:
+                    return None
+        return None
+    except Exception:
+        return None
+
+def draw_header(stdscr, status: dict) -> int:
+    h, w = stdscr.getmaxyx()
+    header_h = max(5, h // 3)
+    win = curses.newwin(header_h, w, 0, 0)
+    win.erase()
+
+    try:
+        curses.start_color()
+        curses.init_pair(1, curses.COLOR_CYAN, 0)
+        curses.init_pair(2, curses.COLOR_YELLOW, 0)
+        curses.init_pair(3, curses.COLOR_GREEN, 0)
+        curses.init_pair(4, curses.COLOR_MAGENTA, 0)
+        c1, c2, c3, c4 = (curses.color_pair(1), curses.color_pair(2), curses.color_pair(3), curses.color_pair(4))
+    except Exception:
+        c1 = c2 = c3 = c4 = curses.A_BOLD
+
+    emj = _supports_emoji()
+    AP = "📶 AP" if emj else "[AP]"
+    AZA = "🜲 Azazel-Zero" if emj else "[Azazel-Zero]"
+    DHCP = "🧩 DHCP" if emj else "[DHCP]"
+    LAP = "💻 Laptop" if emj else "[Laptop]"
+    ARW = " ➜ " if emj else " -> "
+
+    ssid = status.get("ssid", "—")
+    line1 = f"{AP}{ARW}{ssid}{ARW}{AZA}{ARW}{DHCP}{ARW}{LAP}"
+
+    # Build status badges
+    rssi = status.get('rssi_dbm')
+    net_ok = status.get('net_ok', False)
+    captive = status.get('captive')
+
+    if _supports_emoji():
+        ok_sym = '🟢' if net_ok else '🔴'
+        cap_sym = '🔓' if captive is False else ('🔒' if captive is True else '❔')
+    else:
+        ok_sym = 'OK' if net_ok else 'ERR'
+        cap_sym = 'OPEN' if captive is False else ('AUTH' if captive is True else 'UNK')
+
+    # RSSI to 3-step bar
+    if rssi is None:
+        rssi_bar = '—'
+    else:
+        # thresholds: strong >= -55, mid >= -70, else weak
+        lvl = 3 if rssi >= -55 else (2 if rssi >= -70 else 1)
+        rssi_bar = {1:'▁',2:'▃▅',3:'▃▆▇'}.get(lvl, '▁') if _supports_emoji() else {1:'[| ]',2:'[||]',3:'[|||]'}[lvl]
+    badges = f"  [NET {ok_sym}]  [CAP {cap_sym}]  [RSSI {rssi if rssi is not None else '—'} dBm {rssi_bar}]"
+
+    # If it fits, append to line1; else render as separate line
+    if len(line1) + len(badges) <= w - 4:
+        line1 = (line1 + badges)[:w-2]
+        win.addnstr(0, 1, line1, w - 2, c1 | curses.A_BOLD)
+        next_row = 2
+    else:
+        win.addnstr(0, 1, line1, w - 2, c1 | curses.A_BOLD)
+        win.addnstr(1, 1, badges[:w-2], w - 2, c3)
+        next_row = 3
+
+    ip_ap = f"AP(wlan0): {status.get('wlan_ip','—')}"
+    ip_pi = f"Pi(usb0): {status.get('usb_ip','—')}"
+    ip_lap = f"Laptop: {status.get('laptop_ip','—')}"
+    info = f"{ip_ap}   |   {ip_pi}   |   {ip_lap}"
+    row = next_row
+    if len(info) > w - 2:
+        win.addnstr(row, 1, ip_ap[:w-2], w - 2, c2)
+        win.addnstr(row+1, 1, f"{ip_pi}   |   {ip_lap}"[:w-2], w - 2, c2)
+        row = row + 2
+    else:
+        win.addnstr(row, 1, info, w - 2, c2)
+        row = row + 1
+
+    aux = f"GW-IF: {status.get('gw_if','—')}    BSSID: {status.get('bssid','—')}"
+    win.addnstr(row, 1, aux[:w-2], w - 2, c3)
+
+    try:
+        win.hline(header_h - 1, 0, curses.ACS_HLINE, w)
+    except Exception:
+        pass
+
+    hint = "r: refresh  •  Ctrl+Q/F12: detach tmux  •  q: quit"
+    win.addnstr(header_h - 1, max(1, w - len(hint) - 2), hint[:w-2], w - 2, c4)
+
+    win.noutrefresh()
+    return header_h
+
 # Resolve repo root from this file location
 HERE = os.path.abspath(os.path.dirname(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, os.pardir))
@@ -27,7 +244,7 @@ DELAY_TOOL = ["/usr/bin/python3", os.path.join(HERE, "delay_tool.py")]  # if not
 EPAPER = ["/usr/bin/python3", os.path.join(HERE, "boot_splash_epd.py")]
 
 
-HELP = "↑/↓ or j/k: move   Enter: run   r: redraw   q: quit"
+HELP = "↑/↓ or j/k: move   Enter: run   r: refresh net   q: quit"
 
 def _bin_cmd(name):
     here = os.path.abspath(os.path.join(HERE, os.pardir, "bin", name))
@@ -90,14 +307,16 @@ def _tmux_info() -> str:
         return ""
 
 
-def _draw_menu(stdscr, idx: int) -> None:
+def _draw_menu(stdscr, idx: int, net_status: dict) -> None:
     stdscr.erase()
     h, w = stdscr.getmaxyx()
-    title = "Azazel‑Zero Console"
-    stdscr.addnstr(0, max(0, (w - len(title)) // 2), title, w)
-    stdscr.addnstr(1, 0, "=" * max(0, w), w)
+    header_h = draw_header(stdscr, net_status)
 
-    row = 3
+    title = "Azazel‑Zero Console"
+    stdscr.addnstr(header_h, max(0, (w - len(title)) // 2), title, w)
+    stdscr.addnstr(header_h + 1, 0, "=" * max(0, w), w)
+
+    row = header_h + 3
     for i, (label, cmd) in enumerate(MENU):
         marker = ">" if i == idx else " "
         enabled = _exists(cmd) if cmd else True
@@ -122,15 +341,18 @@ def _run_menu(stdscr) -> None:
     # Initial epaper refresh for this screen
     _update_epaper()
 
+    net_status = get_net_status()
+
     while True:
-        _draw_menu(stdscr, idx)
+        _draw_menu(stdscr, idx, net_status)
         ch = stdscr.getch()
         if ch in (curses.KEY_UP, ord('k')):
             idx = (idx - 1) % n
         elif ch in (curses.KEY_DOWN, ord('j')):
             idx = (idx + 1) % n
         elif ch in (ord('r'), ord('R')):
-            continue  # redraw loop will refresh
+            net_status = get_net_status()
+            continue
         elif ch in (ord('q'), 27):
             break
         elif ch in (curses.KEY_ENTER, 10, 13):
