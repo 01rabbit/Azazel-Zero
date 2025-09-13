@@ -10,7 +10,10 @@ EnvironmentFile=/etc/default/azazel-zero
 Environment=VIRTUAL_ENV=%E{AZAZEL_CANARY_VENV}
 Environment=PATH=%E{AZAZEL_CANARY_VENV}/bin:/usr/bin:/bin
 ExecStart=%E{AZAZEL_CANARY_VENV}/bin/opencanaryd --start
+ExecStop=%E{AZAZEL_CANARY_VENV}/bin/opencanaryd --stop
 Restart=always
+RestartSec=3
+TimeoutStopSec=15
 
 [Install]
 WantedBy=multi-user.target

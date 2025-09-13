@@ -98,8 +98,9 @@ Azazel-Zero は軽量ファイアウォールとして設計されており、AI
 
 **セットアップ手順**  
 
-1) `apt` で `python3-pil`, `fonts-dejavu`, `wireless-tools` をインストール。Waveshare e-Paper を `/opt/waveshare-epd` にクローン。`pip3 install RPi.GPIO spidev`。SPI有効化。  
+1) 依存関係はスクリプトで一括導入可能:  
+   `sudo bash bin/install_dependencies.sh --with-epd`
 2) テスト: `sudo python3 ~/Azazel-Zero/py/boot_splash_epd.py`  
-3) サービス `azazel-boot-splash.service` を有効化（ExecStartはリポジトリパスを指定）。
+3) サービス `azazel-epd.service` を有効化（環境変数 `/etc/default/azazel-zero` でパスを管理）。
 
 お使いのパネルドライバが `epd2in13_V4` でない場合は、インポート行を `V3` または `V2` へ変更してください。

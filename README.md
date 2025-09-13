@@ -98,8 +98,9 @@ Script: `py/boot_splash_epd.py`
 
 **Setup**  
 
-1) `apt-get` for `python3-pil`, `fonts-dejavu`, `wireless-tools`; clone Waveshare e-Paper to `/opt/waveshare-epd`; `pip3 install RPi.GPIO spidev`; enable SPI.  
+1) Dependencies can be installed in one step:  
+   `sudo bash bin/install_dependencies.sh --with-epd`
 2) Test: `sudo python3 ~/Azazel-Zero/py/boot_splash_epd.py`  
-3) Enable service `azazel-boot-splash.service` (ExecStart points to the repo path).
+3) Enable service `azazel-epd.service` (paths are managed via `/etc/default/azazel-zero`).
 
 If your panel driver is not `epd2in13_V4`, change it to `V3` or `V2` in the import line.

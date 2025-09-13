@@ -3,6 +3,7 @@
 
 import os, re, subprocess, time, sys, argparse, traceback
 from PIL import Image, ImageDraw, ImageFont
+from typing import Optional, List, Tuple
 
 # === Config / Constants ===
 ASSET_ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
@@ -26,7 +27,7 @@ WS_LIB  = "/opt/waveshare-epd/RaspberryPi_JetsonNano/python/lib"
 DEFAULT_IFACE = "wlan0"
 DEFAULT_TIMEOUT = 30
 
-def run_cmd(args:list[str], timeout:int=5, capture_stderr:bool=False) -> str:
+def run_cmd(args: List[str], timeout: int = 5, capture_stderr: bool = False) -> str:
     try:
         stderr = subprocess.STDOUT if capture_stderr else subprocess.DEVNULL
         out = subprocess.check_output(args, stderr=stderr, timeout=timeout, text=True).strip()
@@ -43,12 +44,12 @@ def get_ssid() -> str:
     ssid = run_cmd(["iwgetid", "-r"], timeout=3)
     return ssid if ssid else "N/A"
 
-def get_ipv4(iface:str) -> str|None:
+def get_ipv4(iface: str) -> Optional[str]:
     out = run_cmd(["ip", "-4", "addr", "show", iface], timeout=3)
     m = re.search(r"inet\s+(\d+\.\d+\.\d+\.\d+)", out)
     return m.group(1) if m else None
 
-def wait_network(timeout_sec:int, iface:str) -> tuple[str, str]:
+def wait_network(timeout_sec: int, iface: str) -> Tuple[str, str]:
     t0 = time.time()
     while time.time() - t0 < timeout_sec:
         ssid = get_ssid()
@@ -113,7 +114,50 @@ def epd_dims(epd):
     h = getattr(epd, "height", 122)
     return (h, w) if h > w else (w, h)
 
-def show_on_epd(img, epd, bicolor):
+def epd_full_clear(epd, bicolor):
+    """
+    一度だけフルリフレッシュして残像を掃く。Clear API が無い場合は全面白を送る。
+    """
+    try:
+        # 一部実装では Clear がないため例外で分岐
+        epd.init()
+        try:
+            epd.Clear(0xFF)
+        except AttributeError:
+            blank = Image.new("1", (getattr(epd, "width", 250), getattr(epd, "height", 122)), 255)
+            # bicolor でも白面なら単層で十分
+            if bicolor:
+                red = Image.new("1", blank.size, 255)
+                epd.display(epd.getbuffer(blank), epd.getbuffer(red))
+            else:
+                epd.display(epd.getbuffer(blank))
+        # フレーム安定のための短い待機
+        time.sleep(0.2)
+    except Exception:
+        # ここで失敗しても致命ではない
+        pass
+
+def show_on_epd(img, epd, bicolor, gentle: bool = False):
+    """
+    gentle=True の場合、ドライバが部分更新APIを提供していればそれを使用して
+    反転（フルリフレッシュ）頻度を下げる。未対応なら通常表示にフォールバック。
+    """
+    # 一部実装では displayPartial / display_Partial など表記ゆれがある
+    partial_api = None
+    for name in ("displayPartial", "display_Partial", "DisplayPartial", "display_Fast"):
+        if hasattr(epd, name):
+            partial_api = getattr(epd, name)
+            break
+
+    if gentle and partial_api:
+        try:
+            # bicolor デバイスでも多くの実装は単一バッファの部分更新を受け付ける
+            partial_api(epd.getbuffer(img))
+            return
+        except Exception:
+            # 失敗したら通常描画にフォールバック
+            pass
+
     if bicolor:
         red = Image.new("1", img.size, 255)
         epd.display(epd.getbuffer(img), epd.getbuffer(red))
@@ -121,7 +165,7 @@ def show_on_epd(img, epd, bicolor):
         epd.display(epd.getbuffer(img))
 
 # ---------- Drawing primitives ----------
-def draw_logo_panel(width, height, title_font, invert=True, subtitle:str|None=None):
+def draw_logo_panel(width, height, title_font, invert=True, subtitle: Optional[str] = None):
     """
     上2/3をロゴ領域にする。invert=True で反転背景に白抜き。
     """
@@ -163,13 +207,18 @@ def draw_progress_frame(width, height, title_font, ratio:float, label:str):
     return img
 
 # ---------- Animations ----------
-def animate_start(epd, bicolor, steps:int=10, min_frame_sec:float=0.25, label="Booting…"):
+def animate_start(epd, bicolor, steps:int=10, min_frame_sec:float=0.25, label="Booting…", gentle: bool = False):
     w, h = epd_dims(epd)
     title_font = pick_font(TITLE_FONT_CANDIDATES, 26)
+    # 1) 起動時はまず一度だけフルリフレッシュで残像を掃く
+    epd_full_clear(epd, bicolor)
+    # 2) 反転ロゴをフル更新で安定表示（以降のバー更新は部分更新で控えめに）
+    base = draw_logo_panel(w, h, title_font, invert=True)
+    show_on_epd(base, epd, bicolor, gentle=False)
     for i in range(steps+1):
         ratio = i/steps
         frame = draw_progress_frame(w, h, title_font, ratio, label)
-        show_on_epd(frame, epd, bicolor)
+        show_on_epd(frame, epd, bicolor, gentle=gentle)
         time.sleep(min_frame_sec)
     epd.sleep()
 
@@ -195,7 +244,7 @@ def animate_shutdown(epd, bicolor, hold_sec:float=1.0):
         pass
 
 # ---------- Legacy splash (情報パネル) ----------
-def draw_info_panel(ssid:str, ip:str, session:str|None, width:int, height:int, debug=False):
+def draw_info_panel(ssid: str, ip: str, session: Optional[str], width: int, height: int, debug: bool = False):
     img = Image.new("1", (width, height), 255); d = ImageDraw.Draw(img)
     font_b = pick_font(TITLE_FONT_CANDIDATES, 18)
     font_m = pick_font(MONO_FONT_CANDIDATES, 16)
@@ -227,10 +276,13 @@ def draw_info_panel(ssid:str, ip:str, session:str|None, width:int, height:int, d
     d.text((x_text, y), ip_text, font=font_m, fill=0)
     return img
 
-def show_info_panel(epd, bicolor, ssid, ip, session, debug=False):
+def show_info_panel(epd, bicolor, ssid, ip, session: Optional[str], debug: bool = False):
     w,h = epd_dims(epd)
+    # 情報表示の前に一度だけフルリフレッシュして文字のエッジを安定させる
+    epd_full_clear(epd, bicolor)
     img = draw_info_panel(ssid, ip, session, w, h, debug=debug)
-    show_on_epd(img, epd, bicolor)
+    # 初回はフル更新でくっきり表示、その後の再描画は必要に応じて gentle を使う想定
+    show_on_epd(img, epd, bicolor, gentle=False)
     epd.sleep()
 
 # ---------- CLI ----------
@@ -242,6 +294,7 @@ def main():
                     help="startアニメのステップ数")
     ap.add_argument("--frame-sec", type=float, default=float(os.getenv("FRAME_SEC","0.25")),
                     help="startアニメのフレーム間隔秒")
+    ap.add_argument("--gentle", action="store_true", help="部分更新が可能なら使用して反転演出を抑制")
     ap.add_argument("--timeout", type=int, default=int(os.getenv("TIMEOUT", DEFAULT_TIMEOUT)))
     ap.add_argument("--iface", type=str, default=os.getenv("IFACE",""))
     ap.add_argument("--debug", action="store_true", default=(os.getenv("DEBUG","0")=="1"))
@@ -258,7 +311,7 @@ def main():
         sys.exit(1)
 
     if args.mode == "start":
-        animate_start(epd, bic, steps=args.steps, min_frame_sec=args.frame_sec, label="Booting…")
+        animate_start(epd, bic, steps=args.steps, min_frame_sec=args.frame_sec, label="Booting…", gentle=args.gentle)
         return
 
     if args.mode == "shutdown":

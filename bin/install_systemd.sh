@@ -18,10 +18,18 @@ sudo install -d /etc/default
 sudo tee /etc/default/azazel-zero >/dev/null <<EOF
 AZAZEL_ROOT=${ROOT}
 AZAZEL_CANARY_VENV=/home/azazel/canary-venv
+
+# 統一したEPDパスとロックファイル
+EPD_PY=${ROOT}/py/boot_splash_epd.py
+EPD_LOCK=/run/azazel-epd.lock
+
+# ネットワーク関連（遅滞制御用）
+WAN_IF=wlan0
+USB_IF=usb0
+SUBNET=192.168.7.0/24
 EOF
 
 # systemd unit を配置
-sudo install -m 0644 "${ROOT}/systemd/azazel-boot-splash.service" /etc/systemd/system/
 sudo install -m 0644 "${ROOT}/systemd/azazel-console.service" /etc/systemd/system/
 sudo install -m 0644 "${ROOT}/systemd/azazel-epd.service"     /etc/systemd/system/
 sudo install -m 0644 "${ROOT}/systemd/suri-epaper.service"    /etc/systemd/system/

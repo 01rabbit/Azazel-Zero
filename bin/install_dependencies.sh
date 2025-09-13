@@ -44,7 +44,8 @@ apt-get install -y \
   iproute2 iptables iptables-persistent dnsmasq \
   jq tmux git curl ca-certificates \
   python3 python3-venv python3-pip \
-  suricata suricata-update
+  suricata suricata-update \
+  util-linux wireless-tools iw
 
 # Persist iptables on reboot (no prompt)
 if ! systemctl is-enabled netfilter-persistent >/dev/null 2>&1; then
@@ -70,7 +71,7 @@ fi
 # Optional: Waveshare E-Paper deps (for boot_splash_epd.py)
 if [[ "$WITH_EPD" -eq 1 ]]; then
   log "Installing Waveshare E-Paper Python dependencies (system-wide)"
-  apt-get install -y python3-dev python3-numpy python3-pil python3-spidev python3-rpi.gpio
+  apt-get install -y python3-dev python3-numpy python3-pil python3-spidev python3-rpi.gpio fonts-noto-cjk
   # numpy/pillow はOSパッケージで十分。必要に応じて最新版へ:
   # pip3 install --no-cache-dir --upgrade pillow numpy
 fi
@@ -98,6 +99,7 @@ cat <<'NEXT'
 2) Prepare Suricata minimal config (optional but recommended for Pi Zero):
    sudo bash bin/suricata_yaml_minify.sh
    sudo bash bin/suricata_update.sh
+   # E-Paper text rendering of Japanese is supported via fonts-noto-cjk (installed above when --with-epd/--all).
 
 3) Start OpenCanary (if installed) after editing ~/.opencanary.conf as needed:
    sudo systemctl enable --now opencanary.service

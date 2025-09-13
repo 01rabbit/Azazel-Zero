@@ -1,7 +1,8 @@
 [Unit]
 Description=Suricata alerts to E-Paper
-After=suricata.service
-Requires=suricata.service
+After=suricata.service azazel-epd.service
+Wants=suricata.service
+PartOf=azazel-epd.service
 
 [Service]
 Type=simple
@@ -9,6 +10,7 @@ User=root
 EnvironmentFile=/etc/default/azazel-zero
 ExecStart=/usr/local/bin/suri_epaper.sh
 Restart=always
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target

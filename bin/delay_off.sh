@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
-WAN="${1:-wlan0}"
+[ -f /etc/default/azazel-zero ] && . /etc/default/azazel-zero || true
+# 既定は /etc/default/azazel-zero の WAN_IF、引数で上書き可
+CONF_WAN="${WAN_IF:-wlan0}"
+WAN="${1:-$CONF_WAN}"
 
 # mangle チェーン解除
-iptables -t mangle -D POSTROUTING -j AZAZEL-DRAG 2>/dev/null || true
+# PREROUTING のフック解除（delay_on.sh と整合）
+iptables -t mangle -D PREROUTING -j AZAZEL-DRAG 2>/dev/null || true
 iptables -t mangle -F AZAZEL-DRAG 2>/dev/null || true
 iptables -t mangle -X AZAZEL-DRAG 2>/dev/null || true
 

@@ -64,12 +64,14 @@ sudo chown -R pi:pi /opt/waveshare-epd
 
 `/home/pi/Azazel-Zero/py/boot_splash_epd.py` から確実にライブラリを参照できるよう、以下のいずれかを設定してください。
 
-- **A) systemd 環境変数で PYTHONPATH を指定（推奨）**  
-  例のユニットファイルに次の行を追加：
+- **A) systemd での環境変数は `/etc/default/azazel-zero` で管理（推奨）**  
+  systemd ユニットファイル内で直接 PYTHONPATH を指定せず、以下のように環境ファイルを読み込む設定にします。
 
   ```ini
-  Environment=PYTHONPATH=/opt/waveshare-epd:/opt/waveshare-epd/python
+  EnvironmentFile=-/etc/default/azazel-zero
   ```
+
+  `/etc/default/azazel-zero` に必要に応じて PYTHONPATH を記述してください。
 
 - **B) スクリプト側で `sys.path` を拡張**  
   `boot_splash_epd.py` の先頭付近に追記：
@@ -108,21 +110,22 @@ python3 boot_splash_epd.py
 
 ### ユニットファイル例
 
-`/etc/systemd/system/azazel-boot-splash.service`
+`/etc/systemd/system/azazel-epd.service`
 
 ```ini
 [Unit]
-Description=Azazel-Zero E-Paper Boot Splash
+Description=Azazel-Zero E-Paper Display Service
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=azazel
-Environment=PYTHONPATH=/opt/waveshare-epd/RaspberryPi_JetsonNano/python:/opt/waveshare-epd/RaspberryPi_JetsonNano/python/lib
-ExecStart=/usr/bin/python3 /home/azazel/Azazel-Zero/py/boot_splash_epd.py
-WorkingDirectory=/home/azazel/Azazel-Zero/py
-Restart=on-failure
+EnvironmentFile=-/etc/default/azazel-zero
+ExecStart=/usr/bin/python3 ${EPD_PY}
+WorkingDirectory=${AZAZEL_ROOT}/py
+Restart=always
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
@@ -132,8 +135,8 @@ WantedBy=multi-user.target
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable azazel-boot-splash
-sudo systemctl start azazel-boot-splash
+sudo systemctl enable azazel-epd
+sudo systemctl start azazel-epd
 ```
 
 ## よくある問題と対処
@@ -147,4 +150,4 @@ sudo systemctl start azazel-boot-splash
 
 ## まとめ
 
-本機能により、Raspberry Pi起動時にSSIDとIPアドレスを電子ペーパーに即座に表示でき、ネットワーク状態の把握や初期セットアップが容易になります。今後は、アイコン表示やMattermost等への通知機能と連携させることで、さらなる拡張が可能です。
+本機能により、Raspberry Pi起動時にSSIDとIPアドレスを電子ペーパーに即座に表示でき、ネットワーク状態の把握や初期セットアップが容易になります。EPD関連のサービスは `azazel-epd.service` に統一されており、今後はアイコン表示やMattermost等への通知機能と連携させることで、さらなる拡張が可能です。

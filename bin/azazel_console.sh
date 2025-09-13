@@ -1,8 +1,13 @@
 #!/usr/bin/env bash
+
 set -euo pipefail
 
+# 共通設定の読込（存在しなくても続行）
+[ -f /etc/default/azazel-zero ] && . /etc/default/azazel-zero || true
+AZAZEL_ROOT="${AZAZEL_ROOT:-/home/azazel/Azazel-Zero}"
+
 SESSION="azazel"
-MENU="python3 /home/azazel/Azazel-Zero/py/azazel_menu.py"   # 後で用意。暫定なら bash -l でも可
+MENU="python3 ${AZAZEL_ROOT}/py/azazel_menu.py"   # 後で用意。暫定なら bash -l でも可
 
 # Ensure environment variables for curses/emoji
 export TERM=xterm-256color
@@ -22,5 +27,5 @@ if ! tmux has-session -t "$SESSION" 2>/dev/null; then
   tmux bind-key   -t "$SESSION" -n C-q  detach-client
   tmux bind-key   -t "$SESSION" -n F12  detach-client
   # ウィンドウ選択時に電子ペーパー更新
-  tmux set-hook -t "$SESSION" after-select-window "run-shell '/home/azazel/Azazel-Zero/bin/update_epaper_tmux.sh'"
+  tmux set-hook -t "$SESSION" after-select-window "run-shell -b '/usr/local/bin/update_epaper_tmux.sh'"
 fi

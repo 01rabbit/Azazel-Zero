@@ -4,7 +4,11 @@
 # Azazel-Zero: Suricata minimal rules updater (quiet profile)
 # Goal: fetch tiny ruleset (DNS + SCAN only), avoid flowbit warnings and bulk distro rules.
 # Usage: sudo bin/suricata_update.sh
+
 set -euo pipefail
+
+# Determine script directory
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 log() { printf "[suricata_update:min] %s\n" "$*"; }
 warn() { printf "[suricata_update:min][WARN] %s\n" "$*" 1>&2; }
@@ -42,14 +46,27 @@ fi
 # link for YAMLs expecting /etc/suricata/rules
 ALT_DIR="/etc/suricata/rules"
 sudo install -d "$ALT_DIR"
+
 sudo ln -sf "$RULE_OUT" "$ALT_DIR/suricata.rules"
 log "Linked $RULE_OUT -> $ALT_DIR/suricata.rules"
 
-warn "To keep output quiet, ensure YAML points to only 'suricata.rules'. Run: sudo bin/suricata_yaml_minify.sh"
+# Optionally minify Suricata YAML to reference only the minimal rules
+log "Minifying Suricata YAML (optional)"
+if [ -x "$SCRIPT_DIR/suricata_yaml_minify.sh" ]; then
+  if ! sudo bash "$SCRIPT_DIR/suricata_yaml_minify.sh"; then
+    warn "YAML minify script failed; continuing with existing YAML"
+  fi
+else
+  warn "suricata_yaml_minify.sh not found; skipping YAML minify"
+fi
 
-log "Testing Suricata configuration"
-if ! sudo suricata -T -c /etc/suricata/suricata.yaml -v; then
-  warn "Test failed. Run 'sudo bin/suricata_yaml_minify.sh' to restrict rule-files, then retry."
+# Prefer minified YAML if generated
+YAML="/etc/suricata/suricata.min.yaml"
+[ -f "$YAML" ] || YAML="/etc/suricata/suricata.yaml"
+
+log "Testing Suricata configuration with $YAML"
+if ! sudo suricata -T -c "$YAML" -v; then
+  warn "Test failed with $YAML. Please review YAML and rules."
   exit 3
 fi
 

@@ -1,15 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
-WAN="${1:-wlan0}"           # egress 側
-SUBNET="${2:-192.168.7.0/24}"  # usb0 側セグメント
+[ -f /etc/default/azazel-zero ] && . /etc/default/azazel-zero || true
+# 既定は /etc/default/azazel-zero の WAN_IF / SUBNET、引数で上書き可
+CONF_WAN="${WAN_IF:-wlan0}"
+CONF_SUBNET="${SUBNET:-192.168.7.0/24}"
+WAN="${1:-$CONF_WAN}"                  # egress 側
+SUBNET="${2:-$CONF_SUBNET}"            # usb0 側セグメント
 MARK=0x66
 
-# mangle 用チェーン（idempotent）
+#
+# mangle 用チェーン（idempotentなセットアップとチェイン挿入）
 iptables -t mangle -N AZAZEL-DRAG 2>/dev/null || true
-# POSTROUTING 先頭にフック（重複回避）
-iptables -t mangle -C POSTROUTING -j AZAZEL-DRAG 2>/dev/null || iptables -t mangle -I POSTROUTING -j AZAZEL-DRAG
+# PREROUTING にフック（重複回避）
+iptables -t mangle -C PREROUTING -j AZAZEL-DRAG 2>/dev/null || iptables -t mangle -A PREROUTING -j AZAZEL-DRAG
 
-# 60秒だけ recent をタッチして SYN に印を付ける（DoS回避の軽負荷）
+#
+# 60秒以内のSYNを recent で判定し、既知はマーキング、新規は recent 登録
 iptables -t mangle -F AZAZEL-DRAG
 iptables -t mangle -A AZAZEL-DRAG -o "$WAN" -p tcp --syn -s "$SUBNET" -m recent --name DRAG --update --seconds 60 --hitcount 1 -j MARK --set-xmark ${MARK}/0xffffffff
 iptables -t mangle -A AZAZEL-DRAG -o "$WAN" -p tcp --syn -s "$SUBNET" -m recent --name DRAG --set
