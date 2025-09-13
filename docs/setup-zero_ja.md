@@ -10,6 +10,22 @@
 
 ## 基本セットアップ手順
 
+### クイックスタート
+
+再現性のある構築を行う場合は、自動セットアップスクリプトを利用できます。
+
+```bash
+sudo chmod +x tools/bootstrap_zero.sh
+sudo tools/bootstrap_zero.sh
+```
+
+オプション:
+
+- `--no-epd` : E-Paper 関連を省略
+- `--no-enable` : systemd サービスの有効化を行わない
+- `--no-suricata` : Suricata の軽量ルール設定を省略
+- `--dry-run` : 実行される手順を表示するのみ
+
 ### 1. OTG 設定
 
 `/boot/config.txt` に追記:

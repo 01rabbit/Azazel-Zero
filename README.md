@@ -81,6 +81,22 @@ However, considering current trends and technological potential, it is worth exa
 
 ※ For detailed setup instructions, please refer to [docs/setup-zero.md](docs/setup-zero.md).
 
+### Quickstart
+
+For reproducible setup, you can use the automated bootstrap script:
+
+```bash
+sudo chmod +x tools/bootstrap_zero.sh
+sudo tools/bootstrap_zero.sh
+```
+
+Options:
+
+- `--no-epd` : Skip E-Paper related dependencies
+- `--no-enable` : Do not enable/start systemd services
+- `--no-suricata` : Skip Suricata minimal rules configuration
+- `--dry-run` : Show steps only (no changes applied)
+
 1. Install **Raspberry Pi OS Lite (64bit)**  
 2. Configure **USB Gadget Mode**  
    - Add `dtoverlay=dwc2` to `/boot/config.txt`  

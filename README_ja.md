@@ -81,6 +81,22 @@ Azazel-Zero は軽量ファイアウォールとして設計されており、AI
 
 ※ 詳細なセットアップ手順は [docs/setup-zero.md](docs/setup-zero.md) を参照してください。
 
+### クイックスタート
+
+再現性のある構築を行う場合は、自動セットアップスクリプトを利用できます。
+
+```bash
+sudo chmod +x tools/bootstrap_zero.sh
+sudo tools/bootstrap_zero.sh
+```
+
+オプション:
+
+- `--no-epd` : E-Paper 関連を省略
+- `--no-enable` : systemd サービスの有効化を行わない
+- `--no-suricata` : Suricata の軽量ルール設定を省略
+- `--dry-run` : 実行される手順を表示するのみ
+
 1. **Raspberry Pi OS Lite (64bit)** をインストール  
 2. **USBガジェットモード** を設定  
    - `/boot/config.txt` に `dtoverlay=dwc2` を追記  

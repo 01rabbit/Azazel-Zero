@@ -11,6 +11,22 @@ This allows the host PC (e.g. laptop) to access the Pi over USB and share the in
 
 ## Basic Setup Steps
 
+### Quickstart
+
+For reproducible setup, you can use the automated bootstrap script:
+
+```bash
+sudo chmod +x tools/bootstrap_zero.sh
+sudo tools/bootstrap_zero.sh
+```
+
+Options:
+
+- `--no-epd` : Skip E-Paper related dependencies
+- `--no-enable` : Do not enable/start systemd services
+- `--no-suricata` : Skip Suricata minimal rules configuration
+- `--dry-run` : Show steps only (no changes applied)
+
 ### 1. OTG Configuration
 
 Add the following to `/boot/config.txt`:
