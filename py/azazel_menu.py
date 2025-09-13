@@ -12,6 +12,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from typing import List, Tuple, Optional
 
 # ===== Network status helpers and header renderer =====
@@ -127,17 +128,17 @@ def _route_alive() -> bool:
 def _captive_portal() -> Optional[bool]:
     # True if captive likely, False if open internet, None if unknown
     try:
+        if shutil.which("curl") is None:
+            return None
         out = subprocess.check_output(
             ["curl", "-sI", "http://connectivitycheck.gstatic.com/generate_204"],
             stderr=subprocess.DEVNULL, timeout=1.5
         ).decode("utf-8", "ignore").splitlines()
         for ln in out:
             if ln.lower().startswith("http/"):
-                # HTTP/1.1 204 No Content or HTTP/2 204
                 parts = ln.split()
                 if len(parts) >= 2 and parts[1] == '204':
-                    return False  # not captive
-                # 30x or other status implies captive or intercept
+                    return False
                 try:
                     code = int(parts[1])
                     return True if 300 <= code < 400 else True
@@ -242,6 +243,9 @@ DELAY_TOOL = ["/usr/bin/python3", os.path.join(HERE, "delay_tool.py")]  # if not
 
 # Optional: e-paper refresh script (non-fatal if missing)
 EPAPER = ["/usr/bin/python3", os.path.join(HERE, "boot_splash_epd.py")]
+EPD_INFO_CMD = EPAPER + ["--mode", "info"]
+EPD_START_CMD = EPAPER + ["--mode", "start"]
+EPD_SHUT_CMD  = EPAPER + ["--mode", "shutdown"]
 
 
 HELP = "↑/↓ or j/k: move   Enter: run   r: refresh net   q: quit"
@@ -261,6 +265,9 @@ MENU = [
     ("OpenCanary: start", ["/bin/sh","-lc","sudo systemctl start opencanary.service"]),
     ("OpenCanary: stop",  ["/bin/sh","-lc","sudo systemctl stop opencanary.service"]),
     ("OpenCanary: hits (tail)", ["/bin/sh","-lc","sudo journalctl -u opencanary.service -f || tail -F /var/log/opencanary.log"]),
+    # E-paper animation tests (non-fatal if script missing)
+    ("EPD: start animation (test)", EPD_START_CMD),
+    ("EPD: shutdown animation (test)", EPD_SHUT_CMD),
     ("Exit", None),
 ]
 
@@ -285,13 +292,13 @@ def _safe_run(cmd: List[str]) -> int:
 def _update_epaper() -> None:
     """Best‑effort e‑paper refresh (non‑fatal)."""
     try:
-        if os.path.exists(EPAPER[-1]):
-            # Pass tmux session/window info if available
+        script_path = EPAPER[-1]
+        if os.path.exists(script_path):
             info = _tmux_info()
             if info:
-                subprocess.run(EPAPER + [info], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(EPD_INFO_CMD + [info], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             else:
-                subprocess.run(EPAPER, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(EPD_INFO_CMD, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     except Exception:
         pass
 
@@ -337,6 +344,14 @@ def _run_menu(stdscr) -> None:
 
     idx = 0
     n = len(MENU)
+
+    # Optional grace to avoid overriding EPD boot animation (seconds)
+    try:
+        grace = float(os.getenv("BOOT_EPD_GRACE", "0"))
+        if grace > 0:
+            time.sleep(grace)
+    except Exception:
+        pass
 
     # Initial epaper refresh for this screen
     _update_epaper()

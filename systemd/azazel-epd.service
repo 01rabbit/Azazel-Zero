@@ -1,7 +1,7 @@
 [Unit]
 Description=Azazel EPD Boot/Shutdown Animations
 DefaultDependencies=no
-Before=graphical.target shutdown.target
+Before=multi-user.target shutdown.target
 After=local-fs.target
 ConditionPathExists=/home/azazel/Azazel-Zero/py/boot_splash_epd.py
 
@@ -10,8 +10,8 @@ Type=oneshot
 RemainAfterExit=yes
 EnvironmentFile=-/etc/default/azazel-zero
 Environment=EPD_PY=/home/azazel/Azazel-Zero/py/boot_splash_epd.py
-ExecStart=/usr/bin/python3 $EPD_PY --mode start --steps 10 --frame-sec 0.25
-ExecStartPost=/usr/bin/python3 $EPD_PY --mode info
+ExecStart=/usr/bin/python3 $EPD_PY --mode start --gentle --steps 10 --frame-sec 0.25
+ExecStartPost=/bin/sh -lc 'sleep 1; /usr/bin/python3 $EPD_PY --mode info'
 ExecStop=/usr/bin/python3 $EPD_PY --mode shutdown
 TimeoutStopSec=12
 

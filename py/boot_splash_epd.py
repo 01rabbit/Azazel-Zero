@@ -295,6 +295,7 @@ def main():
     ap.add_argument("--frame-sec", type=float, default=float(os.getenv("FRAME_SEC","0.25")),
                     help="startアニメのフレーム間隔秒")
     ap.add_argument("--gentle", action="store_true", help="部分更新が可能なら使用して反転演出を抑制")
+    ap.add_argument("--no-clear", action="store_true", help="info表示の初回フルクリアを省略（連続更新向け）")
     ap.add_argument("--timeout", type=int, default=int(os.getenv("TIMEOUT", DEFAULT_TIMEOUT)))
     ap.add_argument("--iface", type=str, default=os.getenv("IFACE",""))
     ap.add_argument("--debug", action="store_true", default=(os.getenv("DEBUG","0")=="1"))
@@ -318,11 +319,16 @@ def main():
         animate_shutdown(epd, bic, hold_sec=1.0)
         return
 
-    # info: 既存の情報スプラッシュ
+    # info: 既存の情報スプラッシュ（--no-clear指定時は初回フルクリアを省略）
     iface = args.iface if args.iface else get_default_iface()
     ssid, ip = wait_network(args.timeout, iface)
     session_info = " ".join(args.session) if args.session else ""
-    show_info_panel(epd, bic, ssid, ip, session_info, debug=args.debug)
+    w, h = epd_dims(epd)
+    if not args.no_clear:
+        epd_full_clear(epd, bic)
+    img = draw_info_panel(ssid, ip, session_info, w, h, debug=args.debug)
+    show_on_epd(img, epd, bic, gentle=(args.no_clear or args.gentle))
+    epd.sleep()
 
 if __name__ == "__main__":
     main()
