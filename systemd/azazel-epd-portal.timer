@@ -1,0 +1,13 @@
+[Unit]
+Description=Run captive-portal detector periodically while system is up
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=1min
+RandomizedDelaySec=20s
+Unit=azazel-epd-portal.service
+Persistent=true
+
+[Install]
+WantedBy=timers.target

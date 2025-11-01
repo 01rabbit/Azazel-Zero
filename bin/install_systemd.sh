@@ -12,10 +12,11 @@ install -m 0755 "${ROOT}/bin/portal_mode.sh"        /usr/local/bin/
 install -m 0755 "${ROOT}/bin/shield_mode.sh"        /usr/local/bin/
 install -m 0755 "${ROOT}/bin/lockdown_mode.sh"      /usr/local/bin/
 install -m 0755 "${ROOT}/bin/suri_epaper.sh"        /usr/local/bin/
+install -m 0755 "${ROOT}/bin/portal_detect.sh"      /usr/local/bin/
 
 # 環境ファイル
 sudo install -d /etc/default
-sudo tee /etc/default/azazel-zero >/dev/null <<EOF
+sudo tee /etc/default/azazel-zero >/dev/null <<'EOF'
 AZAZEL_ROOT=${ROOT}
 AZAZEL_CANARY_VENV=/home/azazel/canary-venv
 
@@ -27,6 +28,9 @@ EPD_LOCK=/run/azazel-epd.lock
 WAN_IF=wlan0
 USB_IF=usb0
 SUBNET=192.168.7.0/24
+
+# Captive Portal detector 用（WAN_IF を使うなら同じにする）
+OUTIF=${WAN_IF}
 EOF
 
 # systemd unit を配置
@@ -34,9 +38,14 @@ sudo install -m 0644 "${ROOT}/systemd/azazel-console.service" /etc/systemd/syste
 sudo install -m 0644 "${ROOT}/systemd/azazel-epd.service"     /etc/systemd/system/
 sudo install -m 0644 "${ROOT}/systemd/suri-epaper.service"    /etc/systemd/system/
 sudo install -m 0644 "${ROOT}/systemd/opencanary.service"     /etc/systemd/system/
+sudo install -m 0644 "${ROOT}/systemd/azazel-epd-portal.service" /etc/systemd/system/
+sudo install -m 0644 "${ROOT}/systemd/azazel-epd-portal.timer"   /etc/systemd/system/
+sudo install -d /etc/systemd/system/azazel-epd.service.d
+sudo install -m 0644 "${ROOT}/systemd/azazel-epd.service.d/10-portal-detect.conf" /etc/systemd/system/azazel-epd.service.d/
 
 # 反映・起動
 sudo systemctl daemon-reload
 sudo systemctl enable --now azazel-console.service
 sudo systemctl enable --now suri-epaper.service
+sudo systemctl enable --now azazel-epd-portal.timer
 echo "Units installed. Edit opencanary.service if needed, then: sudo systemctl enable --now opencanary.service"

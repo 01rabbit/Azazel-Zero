@@ -1,19 +1,17 @@
 [Unit]
 Description=Azazel-Zero Console (tmux session)
-After=network-online.target
+After=network-online.target azazel-epd.service
 Wants=network-online.target
 
 [Service]
-Type=forking
+Type=oneshot
+RemainAfterExit=yes
 User=azazel
-Environment=TERM=xterm-256color
-Environment=LANG=en_US.UTF-8
-Environment=LC_CTYPE=en_US.UTF-8
-# tmuxセッションの起点はラッパーに統一
-ExecStart=/usr/bin/tmux new-session -d -s azazel '/usr/local/bin/azazel_console.sh'
-ExecStop=/usr/bin/tmux kill-session -t azazel
-Restart=on-failure
-KillMode=process
+EnvironmentFile=-/etc/default/azazel-zero
+Environment=HOME=/home/azazel
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+ExecStart=/bin/bash -lc '/usr/local/bin/azazel_console.sh'
+ExecStop=/bin/bash -lc '/usr/bin/tmux has-session -t azazel 2>/dev/null && /usr/bin/tmux kill-session -t azazel || true'
 
 [Install]
 WantedBy=multi-user.target

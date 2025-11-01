@@ -1,0 +1,11 @@
+[Unit]
+Description=Azazel EPD captive-portal periodic detector
+Wants=network-online.target
+After=network-online.target dhcpcd.service
+ConditionPathExists=/usr/local/bin/portal_detect.sh
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/default/azazel-zero
+ExecStart=/usr/local/bin/portal_detect.sh "$OUTIF"
+Nice=10

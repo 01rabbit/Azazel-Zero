@@ -1,19 +1,30 @@
 [Unit]
-Description=Azazel EPD Boot/Shutdown Animations
-DefaultDependencies=no
-Before=multi-user.target shutdown.target
-After=local-fs.target
-ConditionPathExists=/home/azazel/Azazel-Zero/py/boot_splash_epd.py
+Description=Azazel E-Paper Splash
+After=multi-user.target network-online.target
+Wants=network-online.target
+# 停止時に必ず先行させる（十分だが過剰でない）
+Before=poweroff.target halt.target shutdown.target
 
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-EnvironmentFile=-/etc/default/azazel-zero
-Environment=EPD_PY=/home/azazel/Azazel-Zero/py/boot_splash_epd.py
-ExecStart=/usr/bin/python3 $EPD_PY --mode start --gentle --steps 10 --frame-sec 0.25
-ExecStartPost=/bin/sh -lc 'sleep 1; /usr/bin/python3 $EPD_PY --mode info'
-ExecStop=/usr/bin/python3 $EPD_PY --mode shutdown
-TimeoutStopSec=12
+# SPI/I2C に確実に触れるため root で（RasPi の実情）
+User=root
+# 実行条件（SPI が無いなら黙ってスキップ）
+ConditionPathExists=/dev/spidev0.0
+# 起動演出（失敗しても進行の邪魔はしない）
+ExecStart=/bin/bash -lc '/usr/bin/python3 /home/azazel/Azazel-Zero/py/boot_splash_epd.py --mode start --steps=${STEPS:-10} --frame-sec=${FRAME_SEC:-0.25} || true'
+# 停止演出（失敗しても電源断の邪魔はしない）
+ExecStop=/bin/bash -lc '/usr/bin/python3 /home/azazel/Azazel-Zero/py/boot_splash_epd.py --mode shutdown || true'
+
+# 観測しやすくハングしない
+StandardOutput=journal
+StandardError=journal
+TimeoutStartSec=10s
+TimeoutStopSec=8s
+KillMode=process
+Restart=no
 
 [Install]
 WantedBy=multi-user.target
+Also=azazel-epd-shutdown.service
