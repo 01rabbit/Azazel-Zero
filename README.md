@@ -120,3 +120,42 @@ Script: `py/boot_splash_epd.py`
 3) Enable service `azazel-epd.service` (paths are managed via `/etc/default/azazel-zero`).
 
 If your panel driver is not `epd2in13_V4`, change it to `V3` or `V2` in the import line.
+
+### Waveshare Function Library Install (Raspberry Pi Zero 2 W)
+
+`bin/install_waveshare_epd.sh` mirrors the official Raspberry Pi Zero 2 W steps so that the Waveshare demo works immediately. Run:
+
+```bash
+sudo bash bin/install_waveshare_epd.sh
+```
+
+The script performs the following sequence (you can also run them manually if you prefer):
+
+```bash
+# Function library + dependencies
+sudo apt-get update
+sudo apt-get install python3-pip
+sudo apt-get install python3-pil
+sudo apt-get install python3-numpy
+sudo python3 -m pip install spidev
+
+# gpiozero (preinstalled on Raspberry Pi OS, reinstall only if missing)
+sudo apt-get update
+sudo apt install python3-gpiozero
+sudo apt install python-gpiozero    # For legacy python2 if required
+
+# Waveshare demo download
+git clone https://github.com/waveshare/e-Paper.git
+cd e-Paper/RaspberryPi_JetsonNano/
+wget https://files.waveshare.com/upload/7/71/E-Paper_code.zip
+unzip E-Paper_code.zip -d e-Paper
+# Alternate extraction
+sudo apt-get install p7zip-full
+7z x E-Paper_code.zip -O./e-Paper
+
+# Demo execution (mono 2.13in V4 example)
+cd e-Paper/RaspberryPi_JetsonNano/python/examples/
+python3 epd_2in13b_V4_test.py
+```
+
+`install_waveshare_epd.sh` stores the library under `/opt/waveshare-epd`, fetches the `E-Paper_code.zip` archive, and can run the demo automatically with `--run-demo`.

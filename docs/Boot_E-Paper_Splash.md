@@ -31,26 +31,48 @@ Please ensure the following conditions are met in advance.
 
 > Since wiring may differ depending on the module, please also check the official manual of the E-Paper you are using.
 
-The following packages and libraries are required. Example installation procedures are shown.
+The following packages and libraries are required. The steps below reflect the official Raspberry Pi Zero 2 W guidance.
 
-### Installation via apt-get
+### Automated Installation (Recommended)
 
-```sh
-sudo apt update
-sudo apt install python3-pip python3-pil python3-spidev python3-dev python3-setuptools git
+```bash
+sudo bash ~/Azazel-Zero/bin/install_waveshare_epd.sh
 ```
 
-### Installation via pip
+The installer runs the entire sequence (apt, pip, git clone, demo archive download, optional demo run). Use `--run-demo` if you want it to launch the test script automatically.
 
-```sh
-pip3 install RPi.GPIO
-pip3 install spidev
-pip3 install pillow
+### Manual Command Sequence
+
+```bash
+# Function library + dependencies
+sudo apt-get update
+sudo apt-get install python3-pip
+sudo apt-get install python3-pil
+sudo apt-get install python3-numpy
+sudo python3 -m pip install spidev
+
+# gpiozero (usually preinstalled, reinstall only if missing)
+sudo apt-get update
+sudo apt install python3-gpiozero
+sudo apt install python-gpiozero    # Only if Python 2 support is required
+
+# Waveshare demo download
+git clone https://github.com/waveshare/e-Paper.git
+cd e-Paper/RaspberryPi_JetsonNano/
+wget https://files.waveshare.com/upload/7/71/E-Paper_code.zip
+unzip E-Paper_code.zip -d e-Paper
+# Alternate decompression
+sudo apt-get install p7zip-full
+7z x E-Paper_code.zip -O./e-Paper
+
+# Demo execution (mono 2.13in V4 example)
+cd e-Paper/RaspberryPi_JetsonNano/python/examples/
+python3 epd_2in13b_V4_test.py
 ```
 
 ### Obtaining the Driver via git (Example: waveshare EPD library)
 
-> For reproducibility, the driver is fixedly placed in `/opt/waveshare-epd`.
+> `install_waveshare_epd.sh` automatically places the repository under `/opt/waveshare-epd`. Run the commands below only if you are setting things up manually.
 
 ```sh
 sudo mkdir -p /opt

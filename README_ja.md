@@ -120,3 +120,42 @@ sudo tools/bootstrap_zero.sh
 3) サービス `azazel-epd.service` を有効化（環境変数 `/etc/default/azazel-zero` でパスを管理）。
 
 お使いのパネルドライバが `epd2in13_V4` でない場合は、インポート行を `V3` または `V2` へ変更してください。
+
+### Waveshare 機能ライブラリ導入（Raspberry Pi Zero 2 W）
+
+`bin/install_waveshare_epd.sh` は、Raspberry Pi Zero 2 W 向けに公式手順をそのまま自動化したスクリプトです。以下を実行すると、Waveshare のデモが即座に動作する状態になります。
+
+```bash
+sudo bash bin/install_waveshare_epd.sh
+```
+
+スクリプト内部では、次のコマンド列を順番に実行しています（必要に応じて手動で実施しても構いません）。
+
+```bash
+# 機能ライブラリと依存パッケージ
+sudo apt-get update
+sudo apt-get install python3-pip
+sudo apt-get install python3-pil
+sudo apt-get install python3-numpy
+sudo python3 -m pip install spidev
+
+# gpiozero（Raspberry Pi OS では標準ですが、未導入なら再インストール）
+sudo apt-get update
+sudo apt install python3-gpiozero
+sudo apt install python-gpiozero    # 旧 python2 用が必要な場合のみ
+
+# Waveshare デモの取得
+git clone https://github.com/waveshare/e-Paper.git
+cd e-Paper/RaspberryPi_JetsonNano/
+wget https://files.waveshare.com/upload/7/71/E-Paper_code.zip
+unzip E-Paper_code.zip -d e-Paper
+# 代替手段（7zip）
+sudo apt-get install p7zip-full
+7z x E-Paper_code.zip -O./e-Paper
+
+# デモ実行（2.13インチ モノクロ V4 例）
+cd e-Paper/RaspberryPi_JetsonNano/python/examples/
+python3 epd_2in13b_V4_test.py
+```
+
+`install_waveshare_epd.sh` は `/opt/waveshare-epd` 以下へライブラリを配置し、`E-Paper_code.zip` を取得します。`--run-demo` オプションを付けると、最後にデモ実行まで自動で行います。

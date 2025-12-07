@@ -11,6 +11,7 @@
 #   sudo bin/install_dependencies.sh --all         # base + canary + epd
 
 set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 WITH_CANARY=0
 WITH_EPD=0
@@ -71,9 +72,11 @@ fi
 # Optional: Waveshare E-Paper deps (for boot_splash_epd.py)
 if [[ "$WITH_EPD" -eq 1 ]]; then
   log "Installing Waveshare E-Paper Python dependencies (system-wide)"
-  apt-get install -y python3-dev python3-numpy python3-pil python3-spidev python3-rpi.gpio fonts-noto-cjk
+  apt-get install -y python3-dev python3-numpy python3-pil python3-spidev python3-rpi.gpio python3-gpiozero wget unzip p7zip-full fonts-noto-cjk
   # numpy/pillow はOSパッケージで十分。必要に応じて最新版へ:
   # pip3 install --no-cache-dir --upgrade pillow numpy
+  log "Syncing Waveshare official library + demo"
+  bash "$SCRIPT_DIR/install_waveshare_epd.sh" --skip-apt
 fi
 
 # Ensure en_US.UTF-8 locale exists (needed for tmux/emoji)

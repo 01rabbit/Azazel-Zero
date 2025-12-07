@@ -31,26 +31,48 @@ Azazel-Zeroでは、起動時に無線LANのSSIDとIPアドレスを電子ペー
 
 > モジュールによって配線が異なる場合があるため、使用する e-Paper の公式マニュアルも併せて確認してください。
 
-以下のパッケージやライブラリが必要です。インストール手順例を示します。
+必要なパッケージやライブラリは以下の通りです。手順は Raspberry Pi Zero 2 W 向け公式案内に合わせています。
 
-### apt-get でインストール
+### 自動インストール（推奨）
 
-```sh
-sudo apt update
-sudo apt install python3-pip python3-pil python3-spidev python3-dev python3-setuptools git
+```bash
+sudo bash ~/Azazel-Zero/bin/install_waveshare_epd.sh
 ```
 
-### pip でインストール
+このスクリプトで apt / pip / git clone / demo アーカイブの取得、必要に応じたデモ実行（`--run-demo`）まで一括で再現できます。
 
-```sh
-pip3 install RPi.GPIO
-pip3 install spidev
-pip3 install pillow
+### 手動コマンド列
+
+```bash
+# 機能ライブラリと依存パッケージ
+sudo apt-get update
+sudo apt-get install python3-pip
+sudo apt-get install python3-pil
+sudo apt-get install python3-numpy
+sudo python3 -m pip install spidev
+
+# gpiozero（通常は標準導入、未導入なら実行）
+sudo apt-get update
+sudo apt install python3-gpiozero
+sudo apt install python-gpiozero    # 旧 python2 が必要な場合のみ
+
+# Waveshare デモ取得
+git clone https://github.com/waveshare/e-Paper.git
+cd e-Paper/RaspberryPi_JetsonNano/
+wget https://files.waveshare.com/upload/7/71/E-Paper_code.zip
+unzip E-Paper_code.zip -d e-Paper
+# 7zip を使う場合
+sudo apt-get install p7zip-full
+7z x E-Paper_code.zip -O./e-Paper
+
+# デモ実行（2.13インチ モノクロ V4 例）
+cd e-Paper/RaspberryPi_JetsonNano/python/examples/
+python3 epd_2in13b_V4_test.py
 ```
 
 ### git でドライバ取得（例: waveshare の EPD ライブラリ）
 
-> 再現性のため、ドライバは `/opt/waveshare-epd` に固定配置します。
+> `install_waveshare_epd.sh` を利用した場合、`/opt/waveshare-epd` 以下に自動配置されます。手動で構築したい場合のみ以下を実行してください。
 
 ```sh
 sudo mkdir -p /opt
