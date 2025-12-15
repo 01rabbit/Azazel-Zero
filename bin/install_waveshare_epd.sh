@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Waveshare e-Paper function library installer for Raspberry Pi Zero 2 W
-# Mirrors the official steps (apt → pip → git clone → demo archive) so that
-# epd_2in13b_V4_test.py can be executed immediately.
-
+# Mirrors the official steps (apt → git clone → demo archive) following Raspberry Pi OS Trixie/PEP 668 best practices (no system-wide pip).
 set -euo pipefail
 
 TARGET_DIR=${TARGET_DIR:-/opt/waveshare-epd}
@@ -43,8 +41,8 @@ done
 [[ ${EUID:-$(id -u)} -eq 0 ]] || die "Run with sudo/root."
 
 APT_PACKAGES=(
-  python3-pip python3-pil python3-numpy python3-dev
-  python3-rpi.gpio python3-gpiozero git wget unzip p7zip-full
+  python3-pil python3-numpy python3-dev
+  python3-rpi.gpio python3-gpiozero python3-spidev git wget unzip p7zip-full
 )
 
 if [[ $SKIP_APT -eq 0 ]]; then
@@ -56,9 +54,7 @@ else
   log "Skipping apt operations (per --skip-apt)."
 fi
 
-log "Upgrading pip and installing spidev via pip3…"
-python3 -m pip install --upgrade pip
-python3 -m pip install --upgrade spidev
+log "Raspberry Pi OS Trixie uses an externally-managed Python environment (PEP 668). Installing Python deps via apt (no system-wide pip)."
 
 log "Ensuring Waveshare e-Paper repo exists at ${TARGET_DIR}…"
 mkdir -p "$(dirname "$TARGET_DIR")"

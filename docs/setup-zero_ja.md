@@ -228,12 +228,12 @@ sudo iw dev wlan0 scan | egrep 'SSID|freq|signal' | head -n 20
 nmcli dev wifi list
 ```
 
-ここで接続したい **2.4GHz 帯 SSID**（例: `JCOM_NYRY`）が見えていることを確認します。
+ここで接続したい **2.4GHz 帯 SSID**（例: `SSID_NAME`）が見えていることを確認します。
 
 ### 4-4. Wi-Fi への接続とプロファイル永続化
 
 ```bash
-sudo nmcli dev wifi connect "JCOM_NYRY" password "ここにパスワード" ifname wlan0
+sudo nmcli dev wifi connect "SSID_NAME" password "ここにパスワード" ifname wlan0
 ```
 
 成功後、状態を確認します。
@@ -251,7 +251,7 @@ ping -c 3 google.com
 
 ```bash
 nmcli con show
-sudo nmcli con mod "JCOM_NYRY" connection.autoconnect yes
+sudo nmcli con mod "SSID_NAME" connection.autoconnect yes
 ```
 
 これにより、再起動後も同じ SSID に自動接続されます。
