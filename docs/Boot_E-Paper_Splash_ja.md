@@ -31,26 +31,48 @@ Azazel-Zeroでは、起動時に無線LANのSSIDとIPアドレスを電子ペー
 
 > モジュールによって配線が異なる場合があるため、使用する e-Paper の公式マニュアルも併せて確認してください。
 
-以下のパッケージやライブラリが必要です。インストール手順例を示します。
+必要なパッケージやライブラリは以下の通りです。手順は Raspberry Pi Zero 2 W 向け公式案内に合わせています。
 
-### apt-get でインストール
+### 自動インストール（推奨）
 
-```sh
-sudo apt update
-sudo apt install python3-pip python3-pil python3-spidev python3-dev python3-setuptools git
+```bash
+sudo bash ~/Azazel-Zero/bin/install_waveshare_epd.sh
 ```
 
-### pip でインストール
+このスクリプトで apt / pip / git clone / demo アーカイブの取得、必要に応じたデモ実行（`--run-demo`）まで一括で再現できます。
 
-```sh
-pip3 install RPi.GPIO
-pip3 install spidev
-pip3 install pillow
+### 手動コマンド列
+
+```bash
+# 機能ライブラリと依存パッケージ
+sudo apt-get update
+sudo apt-get install python3-pip
+sudo apt-get install python3-pil
+sudo apt-get install python3-numpy
+sudo python3 -m pip install spidev
+
+# gpiozero（通常は標準導入、未導入なら実行）
+sudo apt-get update
+sudo apt install python3-gpiozero
+sudo apt install python-gpiozero    # 旧 python2 が必要な場合のみ
+
+# Waveshare デモ取得
+git clone https://github.com/waveshare/e-Paper.git
+cd e-Paper/RaspberryPi_JetsonNano/
+wget https://files.waveshare.com/upload/7/71/E-Paper_code.zip
+unzip E-Paper_code.zip -d e-Paper
+# 7zip を使う場合
+sudo apt-get install p7zip-full
+7z x E-Paper_code.zip -O./e-Paper
+
+# デモ実行（2.13インチ モノクロ V4 例）
+cd e-Paper/RaspberryPi_JetsonNano/python/examples/
+python3 epd_2in13b_V4_test.py
 ```
 
 ### git でドライバ取得（例: waveshare の EPD ライブラリ）
 
-> 再現性のため、ドライバは `/opt/waveshare-epd` に固定配置します。
+> `install_waveshare_epd.sh` を利用した場合、`/opt/waveshare-epd` 以下に自動配置されます。手動で構築したい場合のみ以下を実行してください。
 
 ```sh
 sudo mkdir -p /opt
@@ -64,12 +86,14 @@ sudo chown -R pi:pi /opt/waveshare-epd
 
 `/home/pi/Azazel-Zero/py/boot_splash_epd.py` から確実にライブラリを参照できるよう、以下のいずれかを設定してください。
 
-- **A) systemd 環境変数で PYTHONPATH を指定（推奨）**  
-  例のユニットファイルに次の行を追加：
+- **A) systemd での環境変数は `/etc/default/azazel-zero` で管理（推奨）**  
+  systemd ユニットファイル内で直接 PYTHONPATH を指定せず、以下のように環境ファイルを読み込む設定にします。
 
   ```ini
-  Environment=PYTHONPATH=/opt/waveshare-epd:/opt/waveshare-epd/python
+  EnvironmentFile=-/etc/default/azazel-zero
   ```
+
+  `/etc/default/azazel-zero` に必要に応じて PYTHONPATH を記述してください。
 
 - **B) スクリプト側で `sys.path` を拡張**  
   `boot_splash_epd.py` の先頭付近に追記：
@@ -108,21 +132,22 @@ python3 boot_splash_epd.py
 
 ### ユニットファイル例
 
-`/etc/systemd/system/azazel-boot-splash.service`
+`/etc/systemd/system/azazel-epd.service`
 
 ```ini
 [Unit]
-Description=Azazel-Zero E-Paper Boot Splash
+Description=Azazel-Zero E-Paper Display Service
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
 User=azazel
-Environment=PYTHONPATH=/opt/waveshare-epd/RaspberryPi_JetsonNano/python:/opt/waveshare-epd/RaspberryPi_JetsonNano/python/lib
-ExecStart=/usr/bin/python3 /home/azazel/Azazel-Zero/py/boot_splash_epd.py
-WorkingDirectory=/home/azazel/Azazel-Zero/py
-Restart=on-failure
+EnvironmentFile=-/etc/default/azazel-zero
+ExecStart=/usr/bin/python3 ${EPD_PY}
+WorkingDirectory=${AZAZEL_ROOT}/py
+Restart=always
+RestartSec=2
 
 [Install]
 WantedBy=multi-user.target
@@ -132,8 +157,8 @@ WantedBy=multi-user.target
 
 ```sh
 sudo systemctl daemon-reload
-sudo systemctl enable azazel-boot-splash
-sudo systemctl start azazel-boot-splash
+sudo systemctl enable azazel-epd
+sudo systemctl start azazel-epd
 ```
 
 ## よくある問題と対処
@@ -147,4 +172,4 @@ sudo systemctl start azazel-boot-splash
 
 ## まとめ
 
-本機能により、Raspberry Pi起動時にSSIDとIPアドレスを電子ペーパーに即座に表示でき、ネットワーク状態の把握や初期セットアップが容易になります。今後は、アイコン表示やMattermost等への通知機能と連携させることで、さらなる拡張が可能です。
+本機能により、Raspberry Pi起動時にSSIDとIPアドレスを電子ペーパーに即座に表示でき、ネットワーク状態の把握や初期セットアップが容易になります。EPD関連のサービスは `azazel-epd.service` に統一されており、今後はアイコン表示やMattermost等への通知機能と連携させることで、さらなる拡張が可能です。

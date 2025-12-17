@@ -1,13 +1,17 @@
 [Unit]
-Description=Azazel-Zero persistent tmux console
-After=network-online.target
+Description=Azazel-Zero Console (tmux session)
+After=network-online.target azazel-epd.service
 Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=azazel
-ExecStart=/home/azazel/Azazel-Zero/bin/azazel_console.sh
 RemainAfterExit=yes
+User=azazel
+EnvironmentFile=-/etc/default/azazel-zero
+Environment=HOME=/home/azazel
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+ExecStart=/bin/bash -lc '/usr/local/bin/azazel_console.sh'
+ExecStop=/bin/bash -lc '/usr/bin/tmux has-session -t azazel 2>/dev/null && /usr/bin/tmux kill-session -t azazel || true'
 
 [Install]
 WantedBy=multi-user.target
