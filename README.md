@@ -49,6 +49,7 @@ At the same time, it returns to the original concepts of the Azazel System: the 
 - Blocking and delaying with **iptables/nftables**  
 - Network delay and jitter insertion with **tc (Traffic Control)**  
 - Dynamic control and notification with **custom Python scripts**  
+- **Wi-Fi safety sensors** (Python + `iw` + `tcpdump`) detect Evil AP / MITM / spoofed DNS-DHCP traffic and emit tags so Azazel-Zero can disconnect risky Wi-Fi automatically  
 
 ### Status Display
 
@@ -58,22 +59,34 @@ At the same time, it returns to the original concepts of the Azazel System: the 
 
 ---
 
-## AI Elements (Research Topic)
+## Threat Evaluation Pipeline
 
-Azazel-Zero is designed as a lightweight firewall, and AI is not essential.  
-However, considering current trends and technological potential, it is worth examining **as a research topic**.  
+Azazel-Zero now ships with a deterministic two-layer verdict engine tuned for Pi Zero 2 W.
 
-- **Limitations**  
-  - Zero 2 W has limited CPU and RAM; large-scale AI is not feasible  
-  - No GPU acceleration  
+- **Layer 1 – Wi-Fi Safety Sensors**  
+  - `py/azazel_zero/sensors/wifi_safety.py` inspects the live link (`iw dev … link`) and watches short `tcpdump` captures for ARP/DHCP/DNS anomalies.  
+  - Emits tags such as `evil_ap`, `mitm`, `arp_spoof`, `dhcp_spoof`, `dns_spoof`, `tls_downgrade`, `captive_portal`, `phish`, with metadata for UI/logs.  
 
-- **Possibilities**  
-  - Lightweight ML models with scikit-learn (e.g., anomaly detection: Isolation Forest, one-class SVM)  
-  - Small-scale inference with TensorFlow Lite (e.g., classifying normal vs. attack traffic)  
+- **Layer 2 – Mock-LLM Core**  
+  - `py/azazel_zero/core/mock_llm_core.py` maps prompts/alerts into the legacy Azazel categories (`scan`, `bruteforce`, `exploit`, `malware`, `sqli`, `dos`, `unknown`).  
+  - Deterministic hashing replaces the old regex+random replies, so repeated tests return identical risk (1–5) and reason strings.  
+  - Profile `"zero"` raises risk whenever Wi-Fi tags indicate Evil AP or MITM, enabling automatic Danger/Disconnect decisions.
 
-- **Positioning**  
-  - Not implemented at present  
-  - Potential for future expansion into a **"learning shield"**  
+- **Threat Judge wrapper**  
+  - `py/azazel_zero/app/threat_judge.py` pulls tags + verdict into a single JSON payload for the UI or automation hooks (e.g., “risk ≥ 4 or tag contains `evil_ap` → drop link”).  
+
+Heavy ML models remain a future research track, but the current deterministic stack already covers the operational needs of the portable shield.
+
+---
+
+## Operator Console & Automation
+
+- **tmux console**  
+  - `py/azazel_menu.py` offers a curses launcher for Wi-Fi selection, Portal/Shield/Lockdown scripts, OpenCanary control, and E-Paper tests.  
+  - `py/azazel_status.py` renders a telemetry pane (SSID/BSSID, gadget IPs, RSSI, captive portal indicator).  
+- **Bootstrap tooling**  
+  - `tools/bootstrap_zero.sh` installs dependencies, systemd units, minimal Suricata rules, and can run smoke tests.  
+  - Flags (`--no-epd`, `--no-enable`, `--no-suricata`, `--dry-run`) adapt the flow for lab vs. production builds.
 
 ---
 
