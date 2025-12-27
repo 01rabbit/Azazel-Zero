@@ -1,0 +1,111 @@
+#!/usr/sbin/nft -f
+# Template for Azazel-Zero First-Minute Control
+# Tokens @UPSTREAM@ @DOWNSTREAM@ @MGMT_IP@ @MGMT_SUBNET@ @PROBE_TTL@ @DYNAMIC_TTL@ are replaced by the controller.
+
+table inet azazel_fmc {
+  define UPSTREAM = "@UPSTREAM@"
+  define DOWNSTREAM = "@DOWNSTREAM@"
+  define MGMT_IP = @MGMT_IP@
+  define MGMT_SUBNET = @MGMT_SUBNET@
+  define DNS_PORT = 53
+
+  define STAGE_PROBE = 1
+  define STAGE_DEGRADED = 2
+  define STAGE_NORMAL = 3
+  define STAGE_CONTAIN = 4
+  define STAGE_DECEPTION = 5
+
+  set allow_probe_v4 {
+    type ipv4_addr
+    flags timeout
+    timeout @PROBE_TTL@
+  }
+
+  set allow_dyn_v4 {
+    type ipv4_addr
+    flags timeout
+    timeout @DYNAMIC_TTL@
+  }
+
+  set mgmt_allow_v4 {
+    type ipv4_addr
+    elements = { $MGMT_IP }
+  }
+
+  chain stage_switch {
+    type filter hook prerouting priority -300; policy accept;
+    ct mark set $STAGE_PROBE
+  }
+
+  chain input {
+    type filter hook input priority 0; policy accept;
+    iifname "lo" accept
+    ct state established,related accept
+    # 管理系トラフィックは downstream (usb0) からのみ許可
+    iifname $DOWNSTREAM ip daddr $MGMT_IP udp dport $DNS_PORT accept
+    iifname $DOWNSTREAM ip daddr $MGMT_IP tcp dport { 22, 80, 8081, 443 } accept
+    # downstream から他ポートへの入力は遮断し、他インタフェースは影響しない
+    iifname $DOWNSTREAM drop
+  }
+
+  chain forward {
+    type filter hook forward priority 0; policy drop;
+    ct state established,related accept
+    iifname $DOWNSTREAM ip daddr $MGMT_IP accept
+    iifname $DOWNSTREAM ip saddr $MGMT_SUBNET ct mark vmap { $STAGE_PROBE : jump stage_probe, $STAGE_DEGRADED : jump stage_degraded, $STAGE_NORMAL : jump stage_normal, $STAGE_CONTAIN : jump stage_contain, $STAGE_DECEPTION : jump stage_deception }
+    iifname $DOWNSTREAM ct mark set ct mark map { 0 : $STAGE_PROBE }
+  }
+
+  chain stage_probe {
+    # Minimal connectivity checks only
+    udp sport 68 udp dport 67 accept
+    tcp dport 80 ip daddr @allow_probe_v4 accept
+    tcp dport 443 ip daddr @allow_probe_v4 accept
+    udp dport 53 ip daddr $MGMT_IP accept
+    udp dport 123 accept
+    udp dport 443 drop
+    tcp dport { 80, 443 } meter flood_probe { ip saddr limit rate over 100/second burst 50 packets } drop
+    ip daddr @allow_probe_v4 accept
+    ip daddr @allow_dyn_v4 accept
+    counter drop
+  }
+
+  chain stage_degraded {
+    udp dport 443 drop
+    tcp dport { 853, 784 } drop
+    ip daddr @allow_dyn_v4 accept
+    tcp dport { 80, 443 } limit rate 100/second accept
+    udp dport { 53 } accept
+    icmp type echo-request accept
+    counter drop
+  }
+
+  chain stage_normal {
+    ip daddr @allow_dyn_v4 accept
+    tcp dport { 853, 784 } drop
+    tcp dport { 80, 443, 22, 25, 110, 143, 993, 995 } accept
+    udp dport { 53, 123 } accept
+    ip protocol icmp accept
+    counter accept
+  }
+
+  chain stage_contain {
+    udp dport { 53, 67, 68 } accept
+    tcp dport { 80, 443 } ip daddr @allow_probe_v4 accept
+    ip daddr @allow_probe_v4 accept
+    counter drop
+  }
+
+  chain stage_deception {
+    tcp dport { 21, 22, 23, 445, 3389, 5900 } accept
+    udp dport 161 accept
+    jump stage_contain
+  }
+}
+
+table ip nat_azazel_fmc {
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+    oifname "@UPSTREAM@" masquerade
+  }
+}
