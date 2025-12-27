@@ -1,0 +1,83 @@
+# Azazel-Zero First-Minute Control default configuration
+# Copy to /etc/azazel-zero/first_minute.yaml and adjust for your environment.
+
+interfaces:
+  upstream: wlan0           # Wi-Fi uplink interface
+  downstream: usb0          # OTG gadget interface presented to the user device
+  mgmt_ip: 10.55.0.10       # IP bound on downstream for management/API/DNS (fixed)
+  mgmt_subnet: 10.55.0.0/24
+
+paths:
+  runtime_dir: /run/azazel-zero
+  log_dir: /var/log/azazel-zero
+  dns_log: /var/log/azazel-dnsmasq.log
+  nft_template: /etc/azazel-zero/nftables/first_minute.nft
+  dnsmasq_conf: /etc/azazel-zero/dnsmasq-first_minute.conf
+  pid_file: /run/azazel-zero/first_minute.pid
+
+dnsmasq:
+  enable: true
+  listen_addr: 10.55.0.10
+  upstream_servers:
+    - 9.9.9.9
+    - 1.1.1.1
+  block_doh_sni:
+    - cloudflare-dns.com
+    - dns.google
+    - doh.opendns.com
+    - dns.quad9.net
+  cache_size: 256
+
+state_machine:
+  probe_window_sec: 20
+  decay_per_sec: 3
+  degrade_threshold: 30
+  normal_threshold: 8
+  contain_threshold: 65
+  stable_normal_sec: 20     # time below normal_threshold before upgrading from DEGRADED
+  stable_probe_sec: 10      # minimum probe dwell before upgrade
+
+probes:
+  captive_portal:
+    url: http://connectivitycheck.gstatic.com/generate_204
+    timeout: 4
+    retries: 1
+  tls:
+    - host: www.debian.org
+      port: 443
+      fingerprint_sha256: ""   # optional pin; leave empty to skip pin check
+      timeout: 4
+    - host: example.com
+      port: 443
+      fingerprint_sha256: ""
+      timeout: 4
+  dns_compare:
+    enabled: true
+    reference_resolver: 9.9.9.9
+    sample_names:
+      - deb.debian.org
+      - example.com
+      - api.github.com
+    max_mismatch: 2
+    timeout: 3
+
+policy:
+  allow_ntp: true
+  allow_ocsp: true
+  probe_allow_ttl: 120      # seconds for probe destinations in nft set
+  dynamic_allow_ttl: 300
+  block_quic_until: NORMAL  # block UDP/443 until reaching this state
+  default_tcp_ratelimit_probe: "50 kbps"
+  default_tcp_ratelimit_degraded: "1 mbps"
+
+status_api:
+  host: 10.55.0.10
+  port: 8081
+
+suricata:
+  enabled: false
+  eve_path: /var/log/suricata/eve.json
+
+deception:
+  enable_if_opencanary_present: true
+  opencanary_cfg: /etc/opencanaryd/opencanary.conf

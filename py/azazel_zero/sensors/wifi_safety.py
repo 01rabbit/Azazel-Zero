@@ -1,7 +1,7 @@
 # azazel_zero/sensors/wifi_safety.py
 from __future__ import annotations
 from typing import Dict, Any, List, Optional, Tuple
-import json, subprocess, time, re
+import json, subprocess, time, re, shutil
 from pathlib import Path
 
 _MAC_RE = re.compile(r"([0-9a-f]{2}:){5}[0-9a-f]{2}", re.I)
@@ -27,8 +27,10 @@ def get_link_state(iface: str) -> Dict[str, str]:
     return {"connected": "1", "ssid": ssid, "bssid": bssid}
 
 def load_known_db(path: str) -> Dict[str, Any]:
+    if not path:
+        return {}
     p = Path(path)
-    if not p.exists():
+    if p.is_dir() or (not p.exists()):
         return {}
     return json.loads(p.read_text(encoding="utf-8"))
 
@@ -52,6 +54,8 @@ def check_ap_fingerprint(link: Dict[str, str], known_db: Dict[str, Any]) -> List
 
 def tcpdump_watch(iface: str, duration_sec: int = 3) -> str:
     # Capture minimal: ARP + DHCP + DNS
+    if shutil.which("tcpdump") is None:
+        return ""
     cmd = ["tcpdump", "-l", "-n", "-i", iface, "arp or (udp and (port 67 or 68)) or (udp and port 53)"]
     p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
     end = time.time() + duration_sec

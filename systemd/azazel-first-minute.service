@@ -1,0 +1,20 @@
+[Unit]
+Description=Azazel-Zero First-Minute Control
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/azazel/Azazel-Zero
+ExecStart=/usr/bin/python3 /home/azazel/Azazel-Zero/azazel_zero_run.py start --config /etc/azazel-zero/first_minute.yaml --foreground
+ExecStop=/usr/bin/python3 /home/azazel/Azazel-Zero/azazel_zero_run.py stop --config /etc/azazel-zero/first_minute.yaml
+ExecStartPre=/usr/sbin/sysctl -w net.ipv4.ip_forward=1
+Restart=on-failure
+RestartSec=3
+User=root
+AmbientCapabilities=CAP_NET_ADMIN CAP_NET_RAW
+RuntimeDirectory=azazel-zero
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
