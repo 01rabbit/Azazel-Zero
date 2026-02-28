@@ -275,6 +275,13 @@ class FirstMinuteController:
         except ValueError:
             self.epd_fail_backoff_max_sec = 300.0
         self.epd_enabled = os.environ.get("AZAZEL_EPD", "1").strip().lower() not in ("0", "false", "no", "off")
+        self.epd_alerts_in_scapegoat = (
+            os.environ.get("AZAZEL_EPD_ALERTS_IN_SCAPEGOAT", "0").strip().lower() in ("1", "true", "yes", "on")
+        )
+        try:
+            self.epd_lock_wait_sec = max(0.0, float(os.environ.get("AZAZEL_EPD_LOCK_WAIT_SEC", "2.5")))
+        except ValueError:
+            self.epd_lock_wait_sec = 2.5
         self.health_last_update = 0.0
         self.health_last_fp: Optional[tuple] = None
         try:
@@ -1338,7 +1345,11 @@ class FirstMinuteController:
 
         # In SCAPEGOAT mode, keep base EPD screen (mode/SSID) and suppress alert-style
         # stage rendering from first-minute path. Mode refresh pipeline owns the screen.
-        if mode_label == "SCAPEGOAT" and stage in (Stage.DEGRADED, Stage.CONTAIN, Stage.DECEPTION):
+        if (
+            mode_label == "SCAPEGOAT"
+            and stage in (Stage.DEGRADED, Stage.CONTAIN, Stage.DECEPTION)
+            and not self.epd_alerts_in_scapegoat
+        ):
             self.logger.debug("EPD: Skipping stage alert render in SCAPEGOAT mode (stage=%s)", stage.value)
             return
         
@@ -1409,12 +1420,19 @@ class FirstMinuteController:
             self.logger.debug(f"EPD: Skipping retry - previous attempt failed, retry in {remaining:.1f}s")
             return
 
+        # Serialize EPD access across first-minute, mode-refresh, and suri-epaper.
+        if shutil.which("flock"):
+            timeout_sec = f"{self.epd_lock_wait_sec:g}"
+            exec_cmd = ["flock", "-w", timeout_sec, "/run/azazel-epd.lock", *cmd]
+        else:
+            exec_cmd = cmd
+
         # Execute EPD update command
         self.logger.info(f"EPD: Updating display - mode={mode}, stage={stage.value}, forced={force}")
         try:
-            result = subprocess.run(cmd, timeout=self.epd_timeout_sec, check=False)
+            result = subprocess.run(exec_cmd, timeout=self.epd_timeout_sec, check=False)
             if result.returncode != 0:
-                raise subprocess.CalledProcessError(result.returncode, cmd)
+                raise subprocess.CalledProcessError(result.returncode, exec_cmd)
             self.epd_last_update = now
             self.epd_last_fp = fp
             # 信号強度も更新 (NORMAL状態時)

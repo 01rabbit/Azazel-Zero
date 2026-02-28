@@ -35,7 +35,7 @@ dnsmasq:
 
 state_machine:
   probe_window_sec: 20
-  decay_per_sec: 3
+  decay_per_sec: 0.8
   degrade_threshold: 20
   normal_threshold: 8
   contain_threshold: 50
@@ -43,7 +43,7 @@ state_machine:
   stable_probe_sec: 10      # minimum probe dwell before upgrade
   
   # ★ NEW: Suricata アラート抑制
-  suricata_cooldown_sec: 30.0  # アラート 1 回あたりの有効期間（秒）
+  suricata_cooldown_sec: 8.0   # 同一バースト抑制。短めにして連続攻撃の追従性を維持
   
   # ★ NEW: CONTAIN 復帰制御
   contain_min_duration_sec: 20.0  # CONTAIN 状態の最小継続時間（秒）

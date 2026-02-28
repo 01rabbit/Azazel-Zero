@@ -10,7 +10,7 @@ PY_ROOT = REPO_ROOT / "py"
 if str(PY_ROOT) not in sys.path:
     sys.path.insert(0, str(PY_ROOT))
 
-from azazel_control.mode_manager import ModeManager, extract_opencanary_ports, render_nft_rules
+from azazel_control.mode_manager import ModeManager, PreflightContext, extract_opencanary_ports, render_nft_rules
 
 
 class OpenCanaryPortParseTests(unittest.TestCase):
@@ -95,6 +95,42 @@ class ApplyDefaultTests(unittest.TestCase):
             result = mgr.apply_default(requested_by="boot")
         set_mode.assert_called_once_with("shield", requested_by="boot")
         self.assertEqual(result, {"ok": True})
+
+
+class ScapegoatVerifyTests(unittest.TestCase):
+    def test_verify_fails_when_opencanary_is_off(self):
+        mgr = ModeManager()
+        context = PreflightContext(
+            usb_if="usb0",
+            upstream_if="wlan0",
+            mgmt_subnet="10.55.0.0/24",
+            mgmt_ip="10.55.0.10",
+            fw_backend="iptables",
+            canary_ports=[22, 80],
+            epd_available=True,
+        )
+        with patch.object(mgr, "_opencanary_state", return_value="OFF"):
+            inv = mgr._verify_invariants("scapegoat", context)
+        self.assertFalse(inv["ok"])
+        self.assertFalse(inv["E_scapegoat_canary_running"])
+        self.assertEqual(inv["reason"], "OpenCanary is not running in scapegoat mode")
+
+    def test_verify_passes_when_opencanary_is_on(self):
+        mgr = ModeManager()
+        context = PreflightContext(
+            usb_if="usb0",
+            upstream_if="wlan0",
+            mgmt_subnet="10.55.0.0/24",
+            mgmt_ip="10.55.0.10",
+            fw_backend="iptables",
+            canary_ports=[22, 80],
+            epd_available=True,
+        )
+        with patch.object(mgr, "_opencanary_state", return_value="ON"):
+            inv = mgr._verify_invariants("scapegoat", context)
+        self.assertTrue(inv["ok"])
+        self.assertTrue(inv["E_scapegoat_canary_running"])
+        self.assertEqual(inv["reason"], "")
 
 
 if __name__ == "__main__":

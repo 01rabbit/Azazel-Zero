@@ -121,9 +121,10 @@ function updateUI(state) {
     updateBadge('internetCheck', connection.internet_check || 'UNKNOWN');
     
     // Captive Portal Warning
-    const captivePortal = connection.captive_portal || 'NO';
+    const wirelessUplinkActive = isWirelessUplinkActive(state, connection);
+    const captivePortalDetected = wirelessUplinkActive && isCaptivePortalDetected(connection);
     const captiveWarning = document.getElementById('captivePortalWarning');
-    if (captivePortal === 'SUSPECTED' || captivePortal === 'YES') {
+    if (captivePortalDetected) {
         captiveWarning.style.display = 'block';
     } else {
         captiveWarning.style.display = 'none';
@@ -135,7 +136,7 @@ function updateUI(state) {
     const portalReprobeRow = document.getElementById('portalReprobeRow');
     const portalReprobeBtn = document.getElementById('portalReprobeBtn');
     const shouldShowPortalButton = (
-        (captivePortal === 'SUSPECTED' || captivePortal === 'YES') &&
+        captivePortalDetected &&
         portalViewer.url
     );
     if (portalViewerRow && portalViewerBtn) {
@@ -165,7 +166,7 @@ function updateUI(state) {
         }
     }
     if (portalReprobeRow && portalReprobeBtn) {
-        if (captivePortal === 'SUSPECTED' || captivePortal === 'YES') {
+        if (captivePortalDetected) {
             portalReprobeRow.style.display = 'flex';
             if (!portalReprobeRunning) {
                 portalReprobeBtn.disabled = false;
@@ -241,6 +242,36 @@ function updateUI(state) {
     updateElement('sysCPUTemp', `${state.temp_c || '--'}°C`);
     updateElement('sysCPUUsage', `${state.cpu_percent || '--'}%`);
     updateElement('sysMemUsage', `${state.mem_percent || '--'}%`);
+}
+
+function normalizeCaptivePortalStatus(value) {
+    if (value === true) return 'YES';
+    if (value === false) return 'NO';
+    const normalized = String(value || '').trim().toUpperCase();
+    if (!normalized) return 'NA';
+    if (normalized === 'TRUE') return 'YES';
+    if (normalized === 'FALSE') return 'NO';
+    return normalized;
+}
+
+function isWirelessUplinkActive(state, connection) {
+    const wifiState = String(connection.wifi_state || '').trim().toUpperCase();
+    if (wifiState && wifiState !== 'CONNECTED') {
+        return false;
+    }
+    const ssid = String((state && state.ssid) || '').trim();
+    if (!ssid || ssid === '-') {
+        return false;
+    }
+    if (ssid.startsWith('Wired:')) {
+        return false;
+    }
+    return true;
+}
+
+function isCaptivePortalDetected(connection) {
+    const status = normalizeCaptivePortalStatus(connection.captive_portal);
+    return status === 'YES' || status === 'SUSPECTED';
 }
 
 // Map state names between different systems
