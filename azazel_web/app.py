@@ -1040,9 +1040,6 @@ def send_control_command_with_params(action: str, params: Dict[str, Any]) -> Dic
             "error": "Unknown action",
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S")
         }
-    if action == "wifi_connect":
-        # State-machine connect flow can run up to ~90s including fallback/recovery.
-        return _send_control_command_socket(action=action, params=params, timeout_sec=120.0)
     return _send_control_command_socket(action=action, params=params, timeout_sec=30.0)
 
 

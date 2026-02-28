@@ -1182,9 +1182,7 @@ async function connectWiFi() {
             // Refresh state immediately
             setTimeout(fetchState, 1000);
         } else {
-            const category = data.failure_category ? ` [${data.failure_category}]` : '';
-            const action = data.recommended_action ? ` / Next: ${data.recommended_action}` : '';
-            showToast(`❌ Connection failed${category}: ${data.error || 'Unknown error'}${action}`, 'error');
+            showToast(`❌ Connection failed: ${data.error || 'Unknown error'}`, 'error');
         }
     } catch (e) {
         console.error('Wi-Fi connect failed:', e);
