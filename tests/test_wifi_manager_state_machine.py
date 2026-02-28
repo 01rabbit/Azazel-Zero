@@ -49,6 +49,34 @@ class WifiManagerStateMachineTests(unittest.TestCase):
         self.assertEqual(out["failure_category"], "SCAN_FAILURE")
         self.assertIn("SSID", out["recommended_action"])
 
+    def test_failed_connect_with_passphrase_cleans_profiles(self):
+        mgr = WifiManager("wlan0")
+
+        with patch.object(mgr, "_scan_networks", return_value={
+            "ok": True,
+            "entries": [{"ssid": "TestAP", "security": "WPA2", "bssid": "aa", "signal": "60"}],
+            "error": "",
+        }), patch.object(mgr, "_activate_with_strategy", return_value={"ok": False, "error": "authentication failed"}), patch.object(mgr, "_is_associated", return_value=False), patch.object(mgr, "_get_ipv4", return_value=""), patch.object(mgr, "_get_default_route", return_value=""), patch.object(mgr.recovery, "run", return_value={"ok": True, "level": 1, "steps": []}), patch.object(mgr, "_delete_profiles_for_ssid", return_value=None) as delete_profiles:
+            out = mgr.connect("TestAP", "WPA2", "wrong-pass", False)
+
+        self.assertFalse(out["ok"], out)
+        self.assertTrue(out.get("cleanup_profiles", False))
+        delete_profiles.assert_called_with("TestAP")
+
+    def test_failed_connect_without_passphrase_keeps_profiles(self):
+        mgr = WifiManager("wlan0")
+
+        with patch.object(mgr, "_scan_networks", return_value={
+            "ok": True,
+            "entries": [{"ssid": "TestAP", "security": "WPA2", "bssid": "aa", "signal": "60"}],
+            "error": "",
+        }), patch.object(mgr, "_activate_with_strategy", return_value={"ok": False, "error": "timeout"}), patch.object(mgr, "_is_associated", return_value=False), patch.object(mgr, "_get_ipv4", return_value=""), patch.object(mgr, "_get_default_route", return_value=""), patch.object(mgr.recovery, "run", return_value={"ok": True, "level": 1, "steps": []}), patch.object(mgr, "_delete_profiles_for_ssid", return_value=None) as delete_profiles:
+            out = mgr.connect("TestAP", "WPA2", None, False)
+
+        self.assertFalse(out["ok"], out)
+        self.assertFalse(out.get("cleanup_profiles", True))
+        delete_profiles.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

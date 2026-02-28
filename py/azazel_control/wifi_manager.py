@@ -367,6 +367,7 @@ class WifiManager:
         last_error = ""
         failure_category = "UNKNOWN_FAILURE"
         attempts: List[Dict[str, Any]] = []
+        cleanup_profiles_on_failure = bool(passphrase)
 
         self._mark_state(STATE_IDLE, "enter", {"ssid": ssid, "iface": self.iface}, diag=diagnostics)
 
@@ -535,6 +536,20 @@ class WifiManager:
             diag=diagnostics,
         )
 
+        cleanup_done = False
+        if cleanup_profiles_on_failure:
+            self._delete_profiles_for_ssid(ssid)
+            cleanup_done = True
+            self._mark_state(
+                STATE_CONNECTED,
+                "cleanup",
+                {
+                    "cleanup_profiles": True,
+                    "ssid": ssid,
+                },
+                diag=diagnostics,
+            )
+
         return {
             "ok": False,
             "last_success_state": last_success_state,
@@ -548,6 +563,7 @@ class WifiManager:
             "attempts": attempts,
             "transition_mode": transition_mode,
             "ssid_seen": ssid_seen,
+            "cleanup_profiles": cleanup_done,
             "state_trace": self.state_trace,
         }
 
