@@ -66,6 +66,7 @@ body {
     color: var(--accent);
     font-size: 1.35em;
     font-weight: 700;
+    order: 2;
 }
 
 .header-health {
@@ -73,6 +74,7 @@ body {
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
+    order: 1;
 }
 
 .header-health-item {
