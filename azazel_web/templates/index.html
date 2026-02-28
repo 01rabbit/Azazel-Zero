@@ -14,6 +14,20 @@
         </div>
         <div class="header-right">
             <span id="headerClock" class="header-clock">--:--:--</span>
+            <div class="header-health">
+                <div class="header-health-item">
+                    <span class="health-label">CPU Temp</span>
+                    <span class="health-value" id="sysCPUTemp">--°C</span>
+                </div>
+                <div class="header-health-item">
+                    <span class="health-label">CPU Usage</span>
+                    <span class="health-value" id="sysCPUUsage">--%</span>
+                </div>
+                <div class="header-health-item">
+                    <span class="health-label">Memory Usage</span>
+                    <span class="health-value" id="sysMemUsage">--%</span>
+                </div>
+            </div>
         </div>
     </header>
 
@@ -135,6 +149,10 @@
                         <span class="metric-label">Internet</span>
                         <span class="badge" id="internetCheck">UNKNOWN</span>
                     </div>
+                    <div class="metric">
+                        <span class="metric-label">Scan Results</span>
+                        <span class="metric-value text-wrap" id="evidScan">-</span>
+                    </div>
                 
                     <div class="metric" id="captivePortalWarning" style="display: none; flex-direction: column; align-items: flex-start;">
                         <span class="metric-label">⚠️ Captive Portal</span>
@@ -225,7 +243,7 @@
 
         <!-- Evidence (Full Width) -->
         <div class="card card-evidence">
-            <h2>📜 Evidence & State</h2>
+            <h2>🧭 State & Decision</h2>
             <div class="evidence-grid">
                 <div class="metric">
                     <span class="metric-label">State</span>
@@ -235,22 +253,6 @@
                     <span class="metric-label">Suspicion</span>
                     <span class="metric-value" id="evidSuspicion">0</span>
                 </div>
-                <div class="metric">
-                    <span class="metric-label">CPU Temp</span>
-                    <span class="metric-value" id="sysCPUTemp">--°C</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">CPU Usage</span>
-                    <span class="metric-value" id="sysCPUUsage">--%</span>
-                </div>
-                <div class="metric">
-                    <span class="metric-label">Memory Usage</span>
-                    <span class="metric-value" id="sysMemUsage">--%</span>
-                </div>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Scan Results</span>
-                <span class="metric-value text-wrap" id="evidScan">-</span>
             </div>
             <div class="metric">
                 <span class="metric-label">Decision</span>

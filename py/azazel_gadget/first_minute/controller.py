@@ -242,13 +242,6 @@ class FirstMinuteController:
         # Keep Wi-Fi connection state in memory to preserve across snapshots
         self.persistent_connection_state: Dict[str, object] = {}
         self.epd_last_update = 0.0
-        self.epd_last_fp: Optional[tuple] = None
-        # Track signal strength separately to skip updates when only signal changes
-        self.epd_last_signal_bucket: Optional[str] = None
-        # Failed update retry guards (avoid immediate re-run of same EPD payload).
-        self.epd_last_failed_fp: Optional[tuple] = None
-        self.epd_retry_after = 0.0
-        self.epd_fail_count = 0
         self._eve_offset = 0
         self._eve_inode: Optional[int] = None
         self._eve_partial = ""
@@ -259,29 +252,7 @@ class FirstMinuteController:
             self.epd_min_interval = float(os.environ.get("AZAZEL_EPD_MIN_INTERVAL", "30"))
         except ValueError:
             self.epd_min_interval = 8.0
-        try:
-            # 3色パネル向けに長めの既定値（秒）
-            self.epd_timeout_sec = float(os.environ.get("AZAZEL_EPD_TIMEOUT", "120"))
-        except ValueError:
-            self.epd_timeout_sec = 120.0
-        try:
-            self.epd_fail_backoff_base_sec = float(
-                os.environ.get("AZAZEL_EPD_FAIL_BACKOFF_BASE", str(max(30.0, self.epd_min_interval)))
-            )
-        except ValueError:
-            self.epd_fail_backoff_base_sec = max(30.0, self.epd_min_interval)
-        try:
-            self.epd_fail_backoff_max_sec = float(os.environ.get("AZAZEL_EPD_FAIL_BACKOFF_MAX", "300"))
-        except ValueError:
-            self.epd_fail_backoff_max_sec = 300.0
         self.epd_enabled = os.environ.get("AZAZEL_EPD", "1").strip().lower() not in ("0", "false", "no", "off")
-        self.epd_alerts_in_scapegoat = (
-            os.environ.get("AZAZEL_EPD_ALERTS_IN_SCAPEGOAT", "0").strip().lower() in ("1", "true", "yes", "on")
-        )
-        try:
-            self.epd_lock_wait_sec = max(0.0, float(os.environ.get("AZAZEL_EPD_LOCK_WAIT_SEC", "2.5")))
-        except ValueError:
-            self.epd_lock_wait_sec = 2.5
         self.health_last_update = 0.0
         self.health_last_fp: Optional[tuple] = None
         try:
@@ -963,6 +934,49 @@ class FirstMinuteController:
         }
         return normalized
 
+    def _reconcile_connection_with_live_link(
+        self,
+        connection: Optional[Dict[str, object]],
+        link_meta: Dict[str, object],
+    ) -> Dict[str, object]:
+        """
+        Merge live link telemetry into persisted connection state.
+
+        This avoids stale CONNECTING/CONNECTED residues from action writers and keeps
+        UI/EPD connection and signal decisions aligned with current link reality.
+        """
+        merged = dict(connection or {})
+        link = link_meta.get("link", {}) if isinstance(link_meta, dict) else {}
+        if not isinstance(link, dict):
+            link = {}
+
+        upstream_iface = str(self.cfg.interfaces.get("upstream", "") or "").strip()
+        live_connected = str(link.get("connected", "0")) == "1"
+
+        if live_connected:
+            merged["wifi_state"] = "CONNECTED"
+            ssid = str(link.get("ssid", "") or merged.get("ssid", "") or "").strip()
+            bssid = str(link.get("bssid", "") or merged.get("bssid", "") or "").strip()
+            ip_wlan = self._get_interface_ip(upstream_iface) if upstream_iface else ""
+            gateway = str(
+                link.get("gateway", "")
+                or self._default_gateway_for_iface(upstream_iface)
+                or merged.get("gateway_ip", "")
+                or ""
+            ).strip()
+            merged["ssid"] = ssid
+            merged["bssid"] = bssid
+            merged["ip_wlan"] = "" if ip_wlan == "-" else ip_wlan
+            merged["gateway_ip"] = gateway
+            if not merged.get("captive_probe_iface"):
+                merged["captive_probe_iface"] = upstream_iface
+            return merged
+
+        # If live link is down, at minimum avoid stale CONNECTED state.
+        if str(merged.get("wifi_state", "") or "").upper() == "CONNECTED":
+            merged["wifi_state"] = "DISCONNECTED"
+        return merged
+
     def write_snapshot(self, summary: Dict[str, object], link_meta: Dict[str, object], skip_sync: bool = False) -> None:
         """Write a UI snapshot JSON for the TUI to consume."""
         # Step 1: Update persistent connection state from any available file
@@ -1118,14 +1132,17 @@ class FirstMinuteController:
             # Merge persistent connection state (from memory or file)
             # This ensures Wi-Fi connection data is never lost across snapshot writes
             if self.persistent_connection_state:
-                snap["connection"] = self._normalize_connection_state(self.persistent_connection_state.copy())
+                base_connection = self.persistent_connection_state.copy()
                 self.logger.debug(f"snapshot: using persistent connection state (from memory): {self.persistent_connection_state}")
             elif existing_connection:
-                snap["connection"] = self._normalize_connection_state(existing_connection.copy())
+                base_connection = existing_connection.copy()
                 self.logger.debug(f"snapshot: loaded connection state from file: {existing_connection}")
             else:
-                snap["connection"] = self._normalize_connection_state(None)
+                base_connection = None
                 self.logger.debug("snapshot: no connection state available")
+
+            base_connection = self._reconcile_connection_with_live_link(base_connection, link_meta)
+            snap["connection"] = self._normalize_connection_state(base_connection)
             self.persistent_connection_state = snap["connection"].copy()
             
             # Write snapshot to runtime paths only to avoid stale home snapshot bleed-through.
@@ -1190,43 +1207,6 @@ class FirstMinuteController:
                 return line.split()[1].split("/")[0]
         return "-"
 
-    def _parse_signal_dbm(self, signal: object) -> Optional[int]:
-        if signal is None:
-            return None
-        try:
-            val = int(float(str(signal).strip()))
-        except Exception:
-            return None
-        if 0 <= val <= 100:
-            return int(val * 0.6 - 90)
-        return val
-
-    def _epd_signal_bucket(self, signal_dbm: Optional[int]) -> str:
-        if signal_dbm is None:
-            return "none"
-        if signal_dbm >= -60:
-            return "strong"
-        if signal_dbm >= -70:
-            return "medium"
-        if signal_dbm >= -80:
-            return "weak"
-        return "none"
-
-    def _epd_fingerprint(
-        self,
-        mode: str,
-        ssid: str,
-        up_ip: str,
-        signal_bucket: str,
-        mode_label: str,
-        msg: str,
-    ) -> tuple:
-        # For NORMAL state: only SSID and IP matter; signal strength changes don't warrant refresh
-        if mode == "normal":
-            return (mode, ssid, up_ip, mode_label)
-        # For other states: include message
-        return (mode, msg)
-
     def _get_current_mode_label(self) -> str:
         """Read current gateway mode label from mode.json (best-effort)."""
         candidates = [
@@ -1272,29 +1252,40 @@ class FirstMinuteController:
         except Exception:
             return False
 
-    def _get_risk_status(self, stage: Stage) -> str:
-        """Map stage to risk status string for EPD display."""
-        status_map = {
-            Stage.NORMAL: "SAFE",
-            Stage.INIT: "CHECKING",
-            Stage.PROBE: "CHECKING",
-            Stage.DEGRADED: "LIMITED",
-            Stage.CONTAIN: "CONTAINED",
-            Stage.DECEPTION: "DECEPTION"
-        }
-        return status_map.get(stage, "UNKNOWN")
-    
-    def _get_risk_status(self, stage: Stage) -> str:
-        """Map stage to risk status string for EPD display."""
-        status_map = {
-            Stage.NORMAL: "SAFE",
-            Stage.INIT: "CHECKING",
-            Stage.PROBE: "CHECKING",
-            Stage.DEGRADED: "LIMITED",
-            Stage.CONTAIN: "CONTAINED",
-            Stage.DECEPTION: "DECEPTION"
-        }
-        return status_map.get(stage, "UNKNOWN")
+    def _trigger_epd_refresh(self) -> bool:
+        """Trigger unified EPD refresh path (single renderer)."""
+        if shutil.which("systemctl"):
+            try:
+                res = subprocess.run(
+                    ["systemctl", "start", "--no-block", "azazel-epd-refresh.service"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3.0,
+                    check=False,
+                )
+                if res.returncode == 0:
+                    return True
+                self.logger.debug(
+                    "EPD: systemd refresh trigger failed rc=%s stderr=%s",
+                    res.returncode,
+                    (res.stderr or "").strip(),
+                )
+            except Exception as e:
+                self.logger.debug(f"EPD: systemd refresh trigger exception: {e}")
+
+        refresh_py = Path(__file__).resolve().parents[2] / "azazel_control" / "epd_mode_refresh.py"
+        if refresh_py.exists():
+            try:
+                subprocess.Popen(
+                    ["python3", str(refresh_py)],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+                return True
+            except Exception as e:
+                self.logger.debug(f"EPD: direct refresh fallback failed: {e}")
+        return False
 
     def _maybe_update_epd(self, stage: Stage, summary: Dict[str, object], link_meta: Dict[str, object], force: bool = False) -> None:
         if self.dry_run or not self.epd_enabled:
@@ -1302,177 +1293,16 @@ class FirstMinuteController:
         now = time.time()
         if not force and (now - self.epd_last_update) < self.epd_min_interval:
             return
-
-        link = link_meta.get("link", {}) if link_meta else {}
-        up_ip = self._get_interface_ip(self.cfg.interfaces.get("upstream", ""))
-        reason = str(summary.get("reason", "") or "")
-
-        epd_script = Path(__file__).resolve().parents[2] / "azazel_epd.py"
-        if not epd_script.exists():
-            return
-
-        # link_meta は接続状態を反映している。未接続時は EPD 入力を固定値にする。
-        # これにより、未接続中の iface IP 揺らぎで不要更新されるのを防ぐ。
-        connected = str(link.get("connected", "0")) == "1"
-        if connected:
-            ssid = str(link.get("ssid") or "No SSID")
-            signal_dbm = self._parse_signal_dbm(link.get("signal"))
-            signal_bucket = self._epd_signal_bucket(signal_dbm)
-            epd_ip = up_ip if up_ip and up_ip != "-" else "No IP"
-        else:
-            ssid = "No SSID"
-            signal_dbm = None
-            signal_bucket = "none"
-            epd_ip = "No IP"
-        
-        # EPD表示用メッセージを作成
-        if stage == Stage.DEGRADED:
-            # WARNING画面は上段固定で "CAUTION" を表示するため、
-            # ここでは下段2行目に載せる「理由」を優先して渡す。
-            if "contain" in reason.lower() and "degraded" in reason.lower():
-                msg = "RECOVERED"  # CONTAIN→DEGRADED の場合
-            elif reason:
-                msg = reason
-            else:
-                msg = "LIMITED"
-        else:
-            msg = (reason or stage.value)[:12]  # その他のステートも12文字制限
-
-        # Get risk assessment (from suspicion score and stage)
-        suspicion = int(summary.get("suspicion", 0))
-        risk_status = self._get_risk_status(stage)
-        mode_label = self._get_current_mode_label()
-
-        # In SCAPEGOAT mode, keep base EPD screen (mode/SSID) and suppress alert-style
-        # stage rendering from first-minute path. Mode refresh pipeline owns the screen.
-        if (
-            mode_label == "SCAPEGOAT"
-            and stage in (Stage.DEGRADED, Stage.CONTAIN, Stage.DECEPTION)
-            and not self.epd_alerts_in_scapegoat
-        ):
-            self.logger.debug("EPD: Skipping stage alert render in SCAPEGOAT mode (stage=%s)", stage.value)
-            return
-        
-        if stage in (Stage.INIT, Stage.PROBE, Stage.NORMAL):
-            mode = "normal"
-            # フィンガープリント：信号強度を除外、risk_statusとsuspicionを含む
-            fp = self._epd_fingerprint(mode, ssid, epd_ip, risk_status, mode_label, str(suspicion))
-            
-            self.logger.debug(f"EPD: fingerprint check - current={fp}, last={self.epd_last_fp}, match={fp == self.epd_last_fp}")
-            self.logger.debug(f"EPD: signal_bucket - current={signal_bucket}, last={self.epd_last_signal_bucket}")
-            
-            # 主要な状態が変わったかチェック
-            if not force and fp == self.epd_last_fp:
-                # 主要な状態（SSID/IP/stage/risk）は変わっていない
-                if signal_bucket == self.epd_last_signal_bucket:
-                    # 信号強度のアイコンも変わっていない → 更新スキップ
-                    self.logger.debug(f"EPD: Skipping update - no meaningful changes")
-                    return
-                else:
-                    # 信号強度のアイコンが変わった（例：strong→medium）
-                    self.logger.info(f"EPD: Updating display - signal icon changed ({self.epd_last_signal_bucket}→{signal_bucket})")
-                    # ここで更新処理に進む（下記のcmd実行へ）
-            cmd = [
-                "python3", str(epd_script),
-                "--state", mode,
-                "--ssid", ssid,
-                "--mode-label", mode_label,
-                "--risk-status", risk_status,
-                "--suspicion", str(suspicion),
-            ]
-            if signal_dbm is not None:
-                cmd += ["--signal", str(signal_dbm)]
-        elif stage == Stage.DEGRADED:
-            mode = "warning"
-            fp = self._epd_fingerprint(mode, "", "", "", "", msg)
-            self.logger.debug(f"EPD: fingerprint check - current={fp}, last={self.epd_last_fp}, match={fp == self.epd_last_fp}")
-            if not force and fp == self.epd_last_fp:
-                self.logger.debug(f"EPD: Skipping update - fingerprint unchanged")
-                return
-            cmd = ["python3", str(epd_script), "--state", mode, "--msg", msg]
-        elif stage == Stage.CONTAIN:
-            mode = "danger"
-            # ★ Phase 2: CONTAIN状態で統一メッセージを表示
-            contain_msg = "ATTACK DETECTED"
-            fp = self._epd_fingerprint(mode, "", "", "", "", contain_msg)
-            self.logger.debug(f"EPD: fingerprint check - current={fp}, last={self.epd_last_fp}, match={fp == self.epd_last_fp}")
-            if not force and fp == self.epd_last_fp:
-                self.logger.debug(f"EPD: Skipping update - fingerprint unchanged")
-                return
-            cmd = ["python3", str(epd_script), "--state", mode, "--msg", contain_msg]
-        elif stage == Stage.DECEPTION:
-            mode = "danger"
-            # Deception stage indicates active hostile activity under canary decoy.
-            delay_active = bool(self._active_canary_delay_targets(now))
-            deception_msg = "DELAY ACTIVE" if delay_active else "DECEPTION MODE"
-            fp = self._epd_fingerprint(mode, "", "", "", "", deception_msg)
-            self.logger.debug(f"EPD: fingerprint check - current={fp}, last={self.epd_last_fp}, match={fp == self.epd_last_fp}")
-            if not force and fp == self.epd_last_fp:
-                self.logger.debug(f"EPD: Skipping update - fingerprint unchanged")
-                return
-            cmd = ["python3", str(epd_script), "--state", mode, "--msg", deception_msg]
-        else:
-            self.logger.debug(f"EPD: Unknown stage {stage}, skipping update")
-            return
-
-        if not force and fp == self.epd_last_failed_fp and now < self.epd_retry_after:
-            remaining = self.epd_retry_after - now
-            self.logger.debug(f"EPD: Skipping retry - previous attempt failed, retry in {remaining:.1f}s")
-            return
-
-        # Serialize EPD access across first-minute, mode-refresh, and suri-epaper.
-        if shutil.which("flock"):
-            timeout_sec = f"{self.epd_lock_wait_sec:g}"
-            exec_cmd = ["flock", "-w", timeout_sec, "/run/azazel-epd.lock", *cmd]
-        else:
-            exec_cmd = cmd
-
-        # Execute EPD update command
-        self.logger.info(f"EPD: Updating display - mode={mode}, stage={stage.value}, forced={force}")
-        try:
-            result = subprocess.run(exec_cmd, timeout=self.epd_timeout_sec, check=False)
-            if result.returncode != 0:
-                raise subprocess.CalledProcessError(result.returncode, exec_cmd)
+        if self._trigger_epd_refresh():
             self.epd_last_update = now
-            self.epd_last_fp = fp
-            # 信号強度も更新 (NORMAL状態時)
-            if stage in (Stage.INIT, Stage.PROBE, Stage.NORMAL):
-                self.epd_last_signal_bucket = signal_bucket
-            # Clear failure retry guards on success.
-            self.epd_last_failed_fp = None
-            self.epd_retry_after = 0.0
-            self.epd_fail_count = 0
-            self.logger.info(f"EPD: Update successful")
-        except subprocess.TimeoutExpired:
-            self.epd_fail_count += 1
-            backoff = min(
-                self.epd_fail_backoff_max_sec,
-                self.epd_fail_backoff_base_sec * (2 ** max(0, self.epd_fail_count - 1)),
+            self.logger.info(
+                "EPD: unified refresh triggered (stage=%s, force=%s, reason=%s)",
+                stage.value,
+                force,
+                str(summary.get("reason", "") or ""),
             )
-            backoff = max(backoff, self.epd_min_interval)
-            self.epd_last_failed_fp = fp
-            self.epd_retry_after = now + backoff
-            # Treat failed attempt as a recent try to avoid hot-loop retries.
-            self.epd_last_update = now
-            self.logger.warning(
-                f"EPD: Update timed out after {self.epd_timeout_sec:.0f}s; "
-                f"retrying in {backoff:.0f}s (fail_count={self.epd_fail_count})"
-            )
-            return
-        except Exception as e:
-            self.epd_fail_count += 1
-            backoff = min(
-                self.epd_fail_backoff_max_sec,
-                self.epd_fail_backoff_base_sec * (2 ** max(0, self.epd_fail_count - 1)),
-            )
-            backoff = max(backoff, self.epd_min_interval)
-            self.epd_last_failed_fp = fp
-            self.epd_retry_after = now + backoff
-            self.epd_last_update = now
-            self.logger.warning(
-                f"EPD: Update failed: {e}; retrying in {backoff:.0f}s (fail_count={self.epd_fail_count})"
-            )
-            return
+        else:
+            self.logger.debug("EPD: unified refresh trigger unavailable")
 
     def _maybe_write_wifi_health(self, link_meta: Dict[str, object]) -> None:
         now = time.time()
@@ -2448,7 +2278,8 @@ class FirstMinuteController:
                 }
             )
             self.write_snapshot(summary, link_meta)
-            self._maybe_update_epd(state, summary, link_meta, force=force_epd_update)
+            force_refresh = bool(force_epd_update or summary.get("changed", False))
+            self._maybe_update_epd(state, summary, link_meta, force=force_refresh)
             self._maybe_write_wifi_health(link_meta)
             if self.pretty_console:
                 self.render_console(state, summary, link_meta)

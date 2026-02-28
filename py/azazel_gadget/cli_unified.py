@@ -14,6 +14,7 @@ import curses
 import json
 import locale
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -939,85 +940,29 @@ def _epd_fingerprint(snap: Snapshot) -> Tuple[str, str, str, Optional[int], str]
 
 
 def update_epd(snap: Snapshot, enable_epd: bool = True) -> None:
-    """
-    Update E-Paper Display based on current snapshot state.
-    Maps TUI states to EPD states:
-      SAFE/CHECKING → normal
-      LIMITED → warning
-      CONTAINED → danger
-      DECEPTION → stale
-    """
+    """Trigger unified EPD refresh pipeline (single renderer)."""
     if not enable_epd:
         return
     
     try:
-        epd_script = DEFAULT_ROOT / "py" / "azazel_epd.py"
-        if not epd_script.exists():
-            return
-        
-        user_state = snap.user_state.upper()
-        
-        # Map TUI state to EPD state
-        if user_state in ("SAFE", "CHECKING"):
-            # NORMAL state: show SSID, wlan IP, wlan signal
-            signal_dbm = _parse_signal_dbm(snap.signal_dbm)
-            
-            # Use wlan (upstream) IP address instead of downstream
-            wlan_ip = snap.up_ip if snap.up_ip and snap.up_ip != "-" else "No IP"
-            mode_label = str((snap.mode or {}).get("current_mode", "shield") or "shield").upper()
-            
-            cmd = [
-                "python3", str(epd_script),
-                "--state", "normal",
-                "--ssid", snap.ssid or "No SSID",
-                "--mode-label", mode_label,
-            ]
-            if signal_dbm is not None:
-                cmd += ["--signal", str(signal_dbm)]
-        
-        elif user_state == "LIMITED":
-            # WARNING state
-            msg = snap.recommendation[:20] if snap.recommendation else "LIMITED MODE"
-            cmd = [
-                "python3", str(epd_script),
-                "--state", "warning",
-                "--msg", msg
-            ]
-        
-        elif user_state == "CONTAINED":
-            # DANGER state
-            msg = snap.recommendation[:20] if snap.recommendation else "ISOLATED"
-            cmd = [
-                "python3", str(epd_script),
-                "--state", "danger",
-                "--msg", msg
-            ]
-        
-        elif user_state == "DECEPTION":
-            # STALE state (repurposed for DECEPTION mode)
-            msg = snap.recommendation[:20] if snap.recommendation else "DECEPTION MODE"
-            cmd = [
-                "python3", str(epd_script),
-                "--state", "stale",
-                "--msg", msg
-            ]
-        
-        else:
-            # Unknown state - show as warning
-            cmd = [
-                "python3", str(epd_script),
-                "--state", "warning",
-                "--msg", "UNKNOWN STATE"
-            ]
-        
-        # Run EPD update in background (non-blocking)
-        subprocess.Popen(
-            cmd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            start_new_session=True
-        )
-    
+        if shutil.which("systemctl"):
+            res = subprocess.run(
+                ["systemctl", "start", "--no-block", "azazel-epd-refresh.service"],
+                capture_output=True,
+                text=True,
+                timeout=3.0,
+                check=False,
+            )
+            if res.returncode == 0:
+                return
+        refresh_py = DEFAULT_ROOT / "py" / "azazel_control" / "epd_mode_refresh.py"
+        if refresh_py.exists():
+            subprocess.Popen(
+                ["python3", str(refresh_py)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+            )
     except Exception:
         # Silently fail - EPD update is optional
         pass
