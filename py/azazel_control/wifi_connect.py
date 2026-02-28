@@ -127,6 +127,28 @@ def connect_nm(iface: str, ssid: str, security: str, passphrase: Optional[str], 
         # OPEN AP profiles are always treated as ephemeral to avoid stale reconnection failures.
         persist = bool(persist and not sec_flags["open"])
 
+        def active_nm_connection_for_iface(target_iface: str) -> Optional[str]:
+            """Return active NM connection name for iface (None when inactive/unknown)."""
+            try:
+                result = subprocess.run(
+                    ["nmcli", "-t", "-f", "GENERAL.CONNECTION", "dev", "show", target_iface],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                if result.returncode != 0:
+                    return None
+                for line in (result.stdout or "").splitlines():
+                    if not line.startswith("GENERAL.CONNECTION:"):
+                        continue
+                    value = line.split(":", 1)[1].strip()
+                    if not value or value == "--":
+                        return None
+                    return value
+                return None
+            except Exception:
+                return None
+
         def list_nm_connections_for_ssid(target_ssid: str) -> List[str]:
             """List NM connection names matching 802-11-wireless.ssid."""
             names: List[str] = []
@@ -248,9 +270,19 @@ def connect_nm(iface: str, ssid: str, security: str, passphrase: Optional[str], 
             if result.returncode != 0:
                 return {"ok": False, "error": result.stderr.strip() or "Connection failed"}
 
-            # Keep OPEN profiles ephemeral; do not leave remembered AP entries behind.
-            delete_nm_connections_for_ssid(ssid)
-            logger.info("Wi-Fi connected via nmcli (OPEN ephemeral)")
+            # Keep current session stable; deleting the active profile can immediately drop Wi-Fi.
+            # Instead, only disable autoconnect for explicit operator-driven reconnect behavior.
+            active_con = active_nm_connection_for_iface(iface) or find_nm_connection_for_ssid(ssid) or ssid
+            try:
+                subprocess.run(
+                    ["nmcli", "con", "mod", active_con, "connection.autoconnect", "no"],
+                    capture_output=True,
+                    timeout=5,
+                )
+            except Exception as e:
+                logger.debug(f"Failed to disable autoconnect for OPEN network {ssid}: {e}")
+
+            logger.info("Wi-Fi connected via nmcli (OPEN session retained)")
             return {"ok": True}
 
         # Check if connection exists for this SSID
@@ -318,26 +350,22 @@ def connect_nm(iface: str, ssid: str, security: str, passphrase: Optional[str], 
                 text=True,
                 timeout=20
             )
-            
-            # If not persisting, delete the connection after use (best-effort)
-            if not persist and result.returncode == 0:
-                delete_nm_connections_for_ssid(ssid)
         
         if result.returncode != 0:
             return {"ok": False, "error": result.stderr.strip() or "Connection failed"}
 
-        # Disable auto-connect to ensure Wi-Fi only connects on explicit user action
-        if con_exists or persist:
-            try:
-                if not con_name:
-                    con_name = find_nm_connection_for_ssid(ssid) or ssid
-                subprocess.run(
-                    ["nmcli", "con", "mod", con_name, "connection.autoconnect", "no"],
-                    capture_output=True,
-                    timeout=5
-                )
-            except Exception as e:
-                logger.debug(f"Failed to disable autoconnect for {ssid}: {e}")
+        # Disable auto-connect to ensure Wi-Fi only connects on explicit user action.
+        # For non-persistent sessions, retain active profile during the session to avoid disconnects.
+        try:
+            if not con_name:
+                con_name = active_nm_connection_for_iface(iface) or find_nm_connection_for_ssid(ssid) or ssid
+            subprocess.run(
+                ["nmcli", "con", "mod", con_name, "connection.autoconnect", "no"],
+                capture_output=True,
+                timeout=5
+            )
+        except Exception as e:
+            logger.debug(f"Failed to disable autoconnect for {ssid}: {e}")
         
         logger.info("Wi-Fi connected via nmcli")
         return {"ok": True}

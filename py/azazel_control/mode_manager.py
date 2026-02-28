@@ -297,6 +297,8 @@ class ModeManager:
             "B_usb_internet": "unknown",
             "C_shield_no_wlan_open": True,
             "D_scapegoat_allowlist_only": True,
+            "E_scapegoat_canary_running": True,
+            "reason": "",
             "details": {},
             "ok": False,
         }
@@ -322,7 +324,9 @@ class ModeManager:
                 nat_text = self._run(["nft", "list", "chain", "inet", "azazel", "nat_prerouting"], check=False).stdout
                 allow_str = "{ " + ", ".join(str(p) for p in context.canary_ports) + " }"
                 inv["D_scapegoat_allowlist_only"] = allow_str in (nat_text or "")
-                inv["details"]["opencanary"] = self._opencanary_state()
+                opencanary_state = self._opencanary_state()
+                inv["details"]["opencanary"] = opencanary_state
+                inv["E_scapegoat_canary_running"] = opencanary_state == "ON"
                 inv["details"]["canary_ns_pids"] = self._run(
                     ["ip", "netns", "pids", CANARY_NS], check=False
                 ).stdout.strip().split()
@@ -334,6 +338,9 @@ class ModeManager:
                 inv["C_shield_no_wlan_open"] = True
             if mode == "scapegoat":
                 inv["D_scapegoat_allowlist_only"] = bool(context.canary_ports)
+                opencanary_state = self._opencanary_state()
+                inv["details"]["opencanary"] = opencanary_state
+                inv["E_scapegoat_canary_running"] = opencanary_state == "ON"
 
         if mode in ("portal", "shield"):
             internet_ok = self._quick_internet_check(context.upstream_if)
@@ -341,10 +348,17 @@ class ModeManager:
             inv["B_usb_internet"] = "ok" if (internet_ok and dns_ok) else "fail"
             inv["details"]["internet_check"] = {"ping": internet_ok, "dns": dns_ok}
 
+        if mode == "scapegoat":
+            if not inv["D_scapegoat_allowlist_only"]:
+                inv["reason"] = "scapegoat allowlist forwarding mismatch"
+            elif not inv["E_scapegoat_canary_running"]:
+                inv["reason"] = "OpenCanary is not running in scapegoat mode"
+
         inv["ok"] = bool(
             inv["A_no_wlan_to_usb_new"]
             and (inv["C_shield_no_wlan_open"] if mode == "shield" else True)
             and (inv["D_scapegoat_allowlist_only"] if mode == "scapegoat" else True)
+            and (inv["E_scapegoat_canary_running"] if mode == "scapegoat" else True)
         )
         return inv
 
