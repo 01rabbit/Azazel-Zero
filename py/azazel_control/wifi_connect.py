@@ -33,6 +33,9 @@ from wifi_scan import (
     check_networkmanager,
     get_saved_networks_nm,
 )
+from connectivity_checker import run_connectivity_checks
+from wifi_diagnostics import WifiDiagnosticsSession
+from wifi_manager import WifiManager
 from azazel_gadget.path_schema import snapshot_path_candidates, warn_if_legacy_path
 
 
@@ -805,6 +808,13 @@ def update_state_json(wifi_state: str, **kwargs):
             "wifi_state": "DISCONNECTED",
             "usb_nat": "OFF",
             "internet_check": "N/A",
+            "wifi_last_success_state": "",
+            "wifi_failure_category": "",
+            "wifi_recommended_action": "",
+            "wifi_trial_id": "",
+            "wifi_diag_json": "",
+            "wifi_diag_bundle": "",
+            "wifi_transition_mode": False,
             "ssid": "",
             "ip_wlan": "",
             "ip_usb": "",
@@ -833,6 +843,13 @@ def update_state_json(wifi_state: str, **kwargs):
                 merged[key] = ""
             merged["internet_check"] = "N/A"
             merged["usb_nat"] = "OFF"
+            merged["wifi_last_success_state"] = ""
+            merged["wifi_failure_category"] = ""
+            merged["wifi_recommended_action"] = ""
+            merged["wifi_trial_id"] = ""
+            merged["wifi_diag_json"] = ""
+            merged["wifi_diag_bundle"] = ""
+            merged["wifi_transition_mode"] = False
             merged["captive_probe_attempts"] = []
             merged["captive_portal_url"] = ""
             merged["captive_probe_url"] = ""
@@ -890,21 +907,31 @@ def connect_wifi(ssid: str, security: str = "UNKNOWN", passphrase: Optional[str]
     """
     # Sanitize passphrase from logs (never log it)
     logger.info(f"Connecting to SSID: {ssid}, Security: {security}, Persist: {persist}")
-    
+
     # Step 2: Set CONNECTING state
-    update_state_json("CONNECTING", wifi_error=None, ssid=ssid)
-    
+    update_state_json(
+        "CONNECTING",
+        wifi_error=None,
+        ssid=ssid,
+        wifi_last_success_state="IDLE",
+        wifi_failure_category="",
+        wifi_recommended_action="",
+        wifi_trial_id="",
+        wifi_diag_json="",
+        wifi_diag_bundle="",
+    )
+
     # Step 3: Detect interfaces
     wlan_iface = get_wireless_interface()
     usb_iface = get_usb_interface()
-    
+
     if not wlan_iface:
         update_state_json("FAILED", wifi_error="No wireless interface")
         return {"ok": False, "error": "No wireless interface found", "ts": time.time()}
-    
+
     if not usb_iface:
         logger.warning("No USB interface detected (NAT will not be applied)")
-    
+
     # Step 4: Check NetworkManager
     if not check_networkmanager(wlan_iface):
         update_state_json("FAILED", wifi_error="NetworkManager not available")
@@ -913,9 +940,9 @@ def connect_wifi(ssid: str, security: str = "UNKNOWN", passphrase: Optional[str]
             "error": "NetworkManager not found or not managing interface",
             "ts": time.time()
         }
-    
+
     logger.info("Wi-Fi manager: NetworkManager")
-    
+
     # Get saved networks
     saved_ssids = get_saved_networks_nm()
     is_saved = ssid in saved_ssids
@@ -926,27 +953,99 @@ def connect_wifi(ssid: str, security: str = "UNKNOWN", passphrase: Optional[str]
         update_state_json("FAILED", wifi_error=error)
         return {"ok": False, "error": error, "ts": time.time()}
 
-    # Step 6: Connect Wi-Fi using NetworkManager
-    result = connect_nm(wlan_iface, ssid, security, passphrase, persist)
-    
+    diagnostics = WifiDiagnosticsSession(ssid=ssid, iface=wlan_iface, profile_hint=ssid)
+    diagnostics.capture_system_baseline()
+    diagnostics.capture_runtime_snapshot("before_connect")
+
+    # Step 6: Connect Wi-Fi using state machine manager
+    manager = WifiManager(wlan_iface)
+    result = manager.connect(
+        ssid=ssid,
+        security=security,
+        passphrase=passphrase,
+        persist=persist,
+        diagnostics=diagnostics,
+    )
+
+    diagnostics.capture_runtime_snapshot("after_connect_attempt")
+
     if not result["ok"]:
-        update_state_json("FAILED", wifi_error=result.get("error", "Connection failed"))
-        return {"ok": False, "error": result.get("error"), "ts": time.time()}
-    
+        failure_category = str(result.get("failure_category", "UNKNOWN_FAILURE") or "UNKNOWN_FAILURE")
+        last_success = str(result.get("last_success_state", "IDLE") or "IDLE")
+        recommended_action = str(result.get("recommended_action", "") or "")
+        capped = result.get("captive") if isinstance(result.get("captive"), dict) else {}
+        diagnostics.set_result(
+            {
+                "ok": False,
+                "failure_category": failure_category,
+                "last_success_state": last_success,
+                "recommended_action": recommended_action,
+                "error": result.get("error", "Connection failed"),
+                "state_trace": result.get("state_trace", []),
+            }
+        )
+        diagnostics.capture_logs()
+        diag_json = str(diagnostics.write_json())
+        diag_bundle = str(diagnostics.build_bundle())
+
+        update_state_json(
+            "FAILED",
+            wifi_error=result.get("error", "Connection failed"),
+            wifi_last_success_state=last_success,
+            wifi_failure_category=failure_category,
+            wifi_recommended_action=recommended_action,
+            wifi_trial_id=diagnostics.trial_id,
+            wifi_diag_json=diag_json,
+            wifi_diag_bundle=diag_bundle,
+            wifi_transition_mode=bool(result.get("transition_mode", False)),
+            captive_probe_iface=wlan_iface,
+            captive_portal=str(capped.get("captive_status", "NA") or "NA"),
+            captive_portal_reason=str(capped.get("captive_reason", "NOT_CHECKED") or "NOT_CHECKED"),
+            captive_checked_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            captive_portal_url=str(capped.get("captive_portal_url", "") or ""),
+            captive_probe_url="",
+            captive_effective_url="",
+            captive_location="",
+        )
+        return {
+            "ok": False,
+            "error": result.get("error"),
+            "failure_category": failure_category,
+            "last_success_state": last_success,
+            "recommended_action": recommended_action,
+            "diagnostic_trial_id": diagnostics.trial_id,
+            "diagnostic_json": diag_json,
+            "diagnostic_bundle": diag_bundle,
+            "state_trace": result.get("state_trace", []),
+            "attempts": result.get("attempts", []),
+            "transition_mode": bool(result.get("transition_mode", False)),
+            "ts": time.time(),
+        }
+
     # Step 7: Get IP info
-    ip_wlan = get_interface_ip(wlan_iface)
+    ip_wlan = str(result.get("ip_wlan") or get_interface_ip(wlan_iface) or "")
     ip_usb = get_interface_ip(usb_iface) if usb_iface else None
-    gateway_ip = get_gateway_ip(wlan_iface)
-    
-    # Step 8: Connectivity checks (captive aware, with short retries)
-    captive_eval = evaluate_captive_portal_with_retries(wlan_iface, has_ip=bool(ip_wlan))
-    checks = captive_eval["checks"]
-    captive_attempts = captive_eval.get("attempts", [])
-    captive_portal = captive_eval["status"]
-    captive_reason = captive_eval["reason"]
-    captive_portal_url = _choose_portal_url_from_checks(checks, captive_portal)
+    gateway_ip = str(result.get("gateway_ip") or get_gateway_ip(wlan_iface) or "")
+
+    # Step 8: Connectivity checks (multi-url captive aware)
+    checks = result.get("captive") if isinstance(result.get("captive"), dict) else run_connectivity_checks(wlan_iface)
+    captive_portal = str(checks.get("captive_status", "NA") or "NA")
+    captive_reason = str(checks.get("captive_reason", "NOT_CHECKED") or "NOT_CHECKED")
+    captive_portal_url = str(checks.get("captive_portal_url", "") or "")
+    captive_attempts = [
+        {
+            "attempt": idx + 1,
+            "delay_sec": 0,
+            "status": str(check.get("http_code", "000")),
+            "reason": str(check.get("curl_error", "") or ""),
+            "http_code": str(check.get("http_code", "000")),
+            "curl_error": str(check.get("curl_error", "")),
+            "url": str(check.get("url", "")),
+        }
+        for idx, check in enumerate(checks.get("checks", []))
+    ]
     internet_check = "OK" if captive_portal == "NO" else "FAIL"
-    
+
     # Step 9: Apply NAT
     usb_nat = "OFF"
     if usb_iface:
@@ -956,10 +1055,36 @@ def connect_wifi(ssid: str, security: str = "UNKNOWN", passphrase: Optional[str]
         else:
             logger.warning(f"NAT not applied: {nat_result.get('error')}")
     
+    diagnostics.set_result(
+        {
+            "ok": True,
+            "last_success_state": str(result.get("last_success_state", "CONNECTED") or "CONNECTED"),
+            "failure_category": "",
+            "recommended_action": "",
+            "state_trace": result.get("state_trace", []),
+            "attempts": result.get("attempts", []),
+            "captive": {
+                "status": captive_portal,
+                "reason": captive_reason,
+                "likelihood": checks.get("captive_likelihood", ""),
+            },
+        }
+    )
+    diagnostics.capture_logs()
+    diag_json = str(diagnostics.write_json())
+    diag_bundle = str(diagnostics.build_bundle())
+
     # Step 10: Finalize state
     update_state_json(
         "CONNECTED",
         wifi_error=None,
+        wifi_last_success_state=str(result.get("last_success_state", "CONNECTED") or "CONNECTED"),
+        wifi_failure_category="",
+        wifi_recommended_action="",
+        wifi_trial_id=diagnostics.trial_id,
+        wifi_diag_json=diag_json,
+        wifi_diag_bundle=diag_bundle,
+        wifi_transition_mode=bool(result.get("transition_mode", False)),
         ssid=ssid,
         ip_wlan=ip_wlan,
         ip_usb=ip_usb,
@@ -977,7 +1102,7 @@ def connect_wifi(ssid: str, security: str = "UNKNOWN", passphrase: Optional[str]
         captive_effective_url=str(checks.get("effective_url", "") or ""),
         captive_location=str(checks.get("location", "") or ""),
     )
-    
+
     return {
         "ok": True,
         "wifi_state": "CONNECTED",
@@ -990,6 +1115,15 @@ def connect_wifi(ssid: str, security: str = "UNKNOWN", passphrase: Optional[str]
         "captive_portal_reason": captive_reason,
         "checks": checks,
         "captive_probe_attempts": captive_attempts,
+        "last_success_state": str(result.get("last_success_state", "CONNECTED") or "CONNECTED"),
+        "failure_category": "",
+        "recommended_action": "",
+        "diagnostic_trial_id": diagnostics.trial_id,
+        "diagnostic_json": diag_json,
+        "diagnostic_bundle": diag_bundle,
+        "state_trace": result.get("state_trace", []),
+        "attempts": result.get("attempts", []),
+        "transition_mode": bool(result.get("transition_mode", False)),
         "ts": time.time()
     }
 
