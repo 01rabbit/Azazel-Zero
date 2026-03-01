@@ -37,6 +37,16 @@ def _order_for(schema: Optional[str] = None) -> tuple[str, str]:
     return "azazel-zero", "azazel-gadget"
 
 
+def _legacy_notice_level(today: Optional[date] = None) -> str:
+    now = today or date.today()
+    days_left = (LEGACY_DEPRECATION_DATE - now).days
+    if days_left < 0:
+        return "error"
+    if days_left <= 90:
+        return "warning"
+    return "debug"
+
+
 def warn_if_legacy_path(path: Path, logger: Any = None) -> None:
     text = str(path)
     if "azazel-zero" not in text:
@@ -50,7 +60,13 @@ def warn_if_legacy_path(path: Path, logger: Any = None) -> None:
     )
     if logger is not None:
         try:
-            logger.warning(msg)
+            level = _legacy_notice_level()
+            if level == "error":
+                logger.error(msg)
+            elif level == "warning":
+                logger.warning(msg)
+            else:
+                logger.debug(msg)
         except Exception:
             pass
 

@@ -64,7 +64,7 @@ function updateUI(state) {
     // Risk Assessment (based on internal state)
     const internal = state.internal || {};
     const suspicion = internal.suspicion || 0;
-    const stateVal = (internal.state_name || 'NORMAL').toUpperCase();
+    const stateVal = mapState((state.user_state || internal.state_name || 'CHECKING').toUpperCase());
     
     // Update score circle
     const scoreCircle = document.getElementById('scoreCircle');
@@ -76,7 +76,7 @@ function updateUI(state) {
     
     scoreCircle.className = `score-circle ${statusClass}`;
     statusEl.className = `risk-status ${statusClass}`;
-    statusEl.textContent = mapState(stateVal);
+    statusEl.textContent = stateVal;
     cardEl.className = `card card-risk ${statusClass}`;
 
     // Toggle Contain/Release buttons based on state
@@ -223,7 +223,7 @@ function updateUI(state) {
     updateElement('ctrlCanaryDelay', delayStatus);
     
     // Evidence
-    updateBadge('evidState', mapState(stateVal));
+    updateBadge('evidState', stateVal);
     updateElement('evidSuspicion', suspicion);
     
     // Scan Results - Channel congestion and AP count
@@ -235,7 +235,7 @@ function updateUI(state) {
     updateElement('evidScan', scanStatus);
     
     // Decision - State + Suspicion
-    const decisionText = `State: ${mapState(stateVal)}, Suspicion: ${suspicion}`;
+    const decisionText = `State: ${stateVal}, Suspicion: ${suspicion}`;
     updateElement('evidDecision', decisionText);
     
     // System Health Card
@@ -276,6 +276,11 @@ function isCaptivePortalDetected(connection) {
 
 // Map state names between different systems
 function mapState(state) {
+    const normalized = String(state || '').trim().toUpperCase();
+    if (!normalized) return 'CHECKING';
+    if (['SAFE', 'CHECKING', 'LIMITED', 'CONTAINED', 'DECEPTION'].includes(normalized)) {
+        return normalized;
+    }
     const map = {
         'NORMAL': 'SAFE',
         'PROBE': 'CHECKING',
@@ -284,16 +289,16 @@ function mapState(state) {
         'DECEPTION': 'DECEPTION',
         'INIT': 'CHECKING'
     };
-    return map[state] || state;
+    return map[normalized] || normalized;
 }
 
 // Get CSS class for status
 function getStatusClass(status) {
     const lower = (status || '').toLowerCase();
-    if (lower === 'normal') return 'normal';
-    if (lower === 'probe') return 'degraded';
-    if (lower === 'degraded') return 'degraded';
-    if (lower === 'contain') return 'contained';
+    if (lower === 'normal' || lower === 'safe') return 'normal';
+    if (lower === 'probe' || lower === 'checking') return 'degraded';
+    if (lower === 'degraded' || lower === 'limited') return 'degraded';
+    if (lower === 'contain' || lower === 'contained') return 'contained';
     if (lower === 'deception') return 'lockdown';
     return 'normal';
 }

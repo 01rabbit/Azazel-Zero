@@ -25,18 +25,13 @@ if [[ -z "${AZAZEL_ROOT:-}" ]]; then
 fi
 
 AZAZEL_ROOT="${AZAZEL_ROOT:-/home/azazel/Azazel-Gadget}"
-EPD_ALERT_PY="${EPD_ALERT_PY:-${AZAZEL_ROOT}/py/azazel_epd.py}"
-# Backward compatibility: if EPD_PY already points to azazel_epd.py, reuse it.
-if [[ ! -f "$EPD_ALERT_PY" ]] && [[ -n "${EPD_PY:-}" ]] && [[ -f "$EPD_PY" ]] && [[ "$(basename "$EPD_PY")" == "azazel_epd.py" ]]; then
-  EPD_ALERT_PY="$EPD_PY"
-fi
 
-LOCK="/run/azazel-epd.lock"
 EVE="/var/log/suricata/eve.json"
 RUNTIME_DIR="/run/azazel"
 STATE_FILE="${RUNTIME_DIR}/suri_epd_state.json"
 COOLDOWN_SEC="${SURI_EPD_COOLDOWN_SEC:-90}"
 MIN_GAP_SEC="${SURI_EPD_MIN_GAP_SEC:-10}"
+ALERT_TTL_SEC="${SURI_EPD_ALERT_TTL_SEC:-120}"
 command -v jq >/dev/null || { echo "jq required"; exit 1; }
 mkdir -p "$RUNTIME_DIR"
 
@@ -49,24 +44,7 @@ normalize_num() {
   fi
 }
 
-current_mode() {
-  local file mode=""
-  for file in \
-    /etc/azazel/mode.json \
-    /etc/azazel-gadget/mode.json \
-    /etc/azazel-zero/mode.json; do
-    [[ -r "$file" ]] || continue
-    mode="$(jq -r '.current_mode // empty' "$file" 2>/dev/null | tr '[:upper:]' '[:lower:]')"
-    if [[ -n "$mode" && "$mode" != "null" ]]; then
-      printf '%s' "$mode"
-      return 0
-    fi
-  done
-  printf ''
-  return 0
-}
-
-should_render() {
+should_publish() {
   local state="$1"
   local msg="$2"
   local now
@@ -93,31 +71,58 @@ should_render() {
   return 0
 }
 
-mark_rendered() {
+mark_published() {
   local state="$1"
   local msg="$2"
+  local severity="$3"
+  local signature="$4"
   local ts
   ts="$(date +%s)"
+  local expires_at=$(( ts + ALERT_TTL_SEC ))
   local tmp="${STATE_FILE}.tmp"
-  printf '{"ts":%s,"state":"%s","msg":"%s"}\n' \
-    "$ts" \
-    "${state//\"/}" \
-    "${msg//\"/}" > "$tmp" || return 0
+  jq -n \
+    --argjson ts "$ts" \
+    --argjson expires_at "$expires_at" \
+    --arg state "$state" \
+    --arg msg "$msg" \
+    --arg severity "$severity" \
+    --arg signature "$signature" \
+    '{
+      ts: $ts,
+      expires_at: $expires_at,
+      state: $state,
+      msg: $msg,
+      severity: $severity,
+      signature: $signature
+    }' > "$tmp" || return 0
   mv -f "$tmp" "$STATE_FILE" || true
 }
 
-render_alert() {
+trigger_refresh() {
+  if command -v systemctl >/dev/null 2>&1; then
+    if systemctl start --no-block azazel-epd-refresh.service >/dev/null 2>&1; then
+      return 0
+    fi
+  fi
+
+  if [[ -x /usr/local/bin/azazel-epd-refresh ]]; then
+    /usr/local/bin/azazel-epd-refresh >/dev/null 2>&1 || true
+    return 0
+  fi
+
+  local refresh_py="${AZAZEL_ROOT}/py/azazel_control/epd_mode_refresh.py"
+  if [[ -f "$refresh_py" ]]; then
+    /usr/bin/python3 "$refresh_py" >/dev/null 2>&1 || true
+    return 0
+  fi
+  return 1
+}
+
+publish_alert() {
   local severity="$1"
   local signature="$2"
   local state="warning"
   local msg="SCAN DETECTED"
-  local mode_now=""
-
-  mode_now="$(current_mode)"
-  if [[ "$mode_now" == "scapegoat" ]]; then
-    # Keep base mode screen while in SCAPEGOAT; do not overlay Suricata alert cards.
-    return 0
-  fi
 
   if [[ "$severity" =~ ^[0-9]+$ ]] && (( severity <= 2 )); then
     state="danger"
@@ -126,25 +131,13 @@ render_alert() {
 
   logger -t suri-epaper "suricata alert: severity=${severity} signature=${signature:0:96}" >/dev/null 2>&1 || true
 
-  if [[ ! -f "$EPD_ALERT_PY" ]]; then
+  if ! should_publish "$state" "$msg"; then
     return 0
   fi
 
-  if ! should_render "$state" "$msg"; then
-    return 0
-  fi
-
-  local rc=0
-  if command -v flock >/dev/null 2>&1; then
-    flock -w 0 "$LOCK" /usr/bin/python3 "$EPD_ALERT_PY" --state "$state" --msg "$msg" >/dev/null 2>&1 || rc=$?
-  else
-    /usr/bin/python3 "$EPD_ALERT_PY" --state "$state" --msg "$msg" >/dev/null 2>&1 || rc=$?
-  fi
-
-  if [[ "$rc" -eq 0 ]]; then
-    mark_rendered "$state" "$msg"
-  else
-    logger -t suri-epaper "render skipped/failed: state=${state} rc=${rc}" >/dev/null 2>&1 || true
+  mark_published "$state" "$msg" "$severity" "$signature"
+  if ! trigger_refresh; then
+    logger -t suri-epaper "refresh trigger unavailable after state publish" >/dev/null 2>&1 || true
   fi
 }
 
@@ -152,5 +145,5 @@ tail -Fn0 "$EVE" | jq -rc 'select(.event_type=="alert") | [(.alert.severity // 3
 while IFS=$'\t' read -r severity signature; do
   signature="${signature//$'\r'/ }"
   signature="${signature//$'\n'/ }"
-  render_alert "$severity" "$signature"
+  publish_alert "$severity" "$signature"
 done

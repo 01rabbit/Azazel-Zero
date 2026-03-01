@@ -14,12 +14,26 @@
         </div>
         <div class="header-right">
             <span id="headerClock" class="header-clock">--:--:--</span>
+            <div class="header-health">
+                <div class="header-health-item">
+                    <span class="health-label">CPU Temp</span>
+                    <span class="health-value" id="sysCPUTemp">--°C</span>
+                </div>
+                <div class="header-health-item">
+                    <span class="health-label">CPU Usage</span>
+                    <span class="health-value" id="sysCPUUsage">--%</span>
+                </div>
+                <div class="header-health-item">
+                    <span class="health-label">Memory Usage</span>
+                    <span class="health-value" id="sysMemUsage">--%</span>
+                </div>
+            </div>
         </div>
     </header>
 
     <!-- Main Content -->
     <div class="container">
-        <!-- PC: Two-column layout | Mobile: Single column -->
+        <!-- Top Row: 3 cards | Mobile: Single column -->
         <div class="grid">
             <!-- Risk Card -->
             <div class="card card-risk" id="cardRisk">
@@ -132,8 +146,16 @@
                         <span class="badge" id="wifiState">DISCONNECTED</span>
                     </div>
                     <div class="metric">
+                        <span class="metric-label">USB Route</span>
+                        <span class="badge" id="usbNat">OFF</span>
+                    </div>
+                    <div class="metric">
                         <span class="metric-label">Internet</span>
                         <span class="badge" id="internetCheck">UNKNOWN</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Scan Results</span>
+                        <span class="metric-value text-wrap" id="evidScan">-</span>
                     </div>
                 
                     <div class="metric" id="captivePortalWarning" style="display: none; flex-direction: column; align-items: flex-start;">
@@ -191,70 +213,57 @@
                     </div>
                 </div>
 
-                <!-- Live Notifications Card -->
-                <div class="card card-notifications">
-                    <h2>🔔 Live Notifications</h2>
-                    <div class="metric">
-                        <span class="metric-label">Event Stream</span>
-                        <span class="badge" id="ntfyStreamStatus">CONNECTING</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">Browser Notification</span>
-                        <span class="badge" id="browserNotifyStatus">DEFAULT</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">Unread</span>
-                        <span class="badge" id="ntfyUnreadBadge">0</span>
-                    </div>
-                    <div class="metric">
-                        <span class="metric-label">CA Cert</span>
-                        <span class="badge" id="caCertStatus">CHECKING</span>
-                    </div>
-                    <button class="btn btn-primary" id="enableNotificationsBtn" onclick="enableBrowserNotifications()" style="margin-top: 8px; width: 100%; font-size: 0.9em; padding: 8px;">
-                        🔔 通知を有効化
-                    </button>
-                    <button class="btn btn-secondary" id="downloadCaBtn" onclick="downloadCACertificate()" style="margin-top: 8px; width: 100%; font-size: 0.9em; padding: 8px;">
-                        📥 CA証明書をダウンロード
-                    </button>
-                    <div class="cert-fingerprint" id="caCertFingerprint">SHA256: -</div>
-                    <div class="event-log-wrap">
-                        <ul class="event-log-list" id="ntfyEventLog"></ul>
-                    </div>
-                </div>
         </div>
 
-        <!-- Evidence (Full Width) -->
-        <div class="card card-evidence">
-            <h2>📜 Evidence & State</h2>
-            <div class="evidence-grid">
+        <!-- Second Row: 2 cards -->
+        <div class="grid-secondary">
+            <!-- Live Notifications Card -->
+            <div class="card card-notifications">
+                <h2>🔔 Live Notifications</h2>
                 <div class="metric">
-                    <span class="metric-label">State</span>
-                    <span class="badge" id="evidState">NORMAL</span>
+                    <span class="metric-label">Event Stream</span>
+                    <span class="badge" id="ntfyStreamStatus">CONNECTING</span>
                 </div>
                 <div class="metric">
-                    <span class="metric-label">Suspicion</span>
-                    <span class="metric-value" id="evidSuspicion">0</span>
+                    <span class="metric-label">Browser Notification</span>
+                    <span class="badge" id="browserNotifyStatus">DEFAULT</span>
                 </div>
                 <div class="metric">
-                    <span class="metric-label">CPU Temp</span>
-                    <span class="metric-value" id="sysCPUTemp">--°C</span>
+                    <span class="metric-label">Unread</span>
+                    <span class="badge" id="ntfyUnreadBadge">0</span>
                 </div>
                 <div class="metric">
-                    <span class="metric-label">CPU Usage</span>
-                    <span class="metric-value" id="sysCPUUsage">--%</span>
+                    <span class="metric-label">CA Cert</span>
+                    <span class="badge" id="caCertStatus">CHECKING</span>
                 </div>
-                <div class="metric">
-                    <span class="metric-label">Memory Usage</span>
-                    <span class="metric-value" id="sysMemUsage">--%</span>
+                <button class="btn btn-primary" id="enableNotificationsBtn" onclick="enableBrowserNotifications()" style="margin-top: 8px; width: 100%; font-size: 0.9em; padding: 8px;">
+                    🔔 通知を有効化
+                </button>
+                <button class="btn btn-secondary" id="downloadCaBtn" onclick="downloadCACertificate()" style="margin-top: 8px; width: 100%; font-size: 0.9em; padding: 8px;">
+                    📥 CA証明書をダウンロード
+                </button>
+                <div class="cert-fingerprint" id="caCertFingerprint">SHA256: -</div>
+                <div class="event-log-wrap">
+                    <ul class="event-log-list" id="ntfyEventLog"></ul>
                 </div>
             </div>
-            <div class="metric">
-                <span class="metric-label">Scan Results</span>
-                <span class="metric-value text-wrap" id="evidScan">-</span>
-            </div>
-            <div class="metric">
-                <span class="metric-label">Decision</span>
-                <span class="metric-value text-wrap" id="evidDecision">-</span>
+
+            <div class="card card-evidence">
+                <h2>🧭 State & Decision</h2>
+                <div class="evidence-grid">
+                    <div class="metric">
+                        <span class="metric-label">State</span>
+                        <span class="badge" id="evidState">NORMAL</span>
+                    </div>
+                    <div class="metric">
+                        <span class="metric-label">Suspicion</span>
+                        <span class="metric-value" id="evidSuspicion">0</span>
+                    </div>
+                </div>
+                <div class="metric">
+                    <span class="metric-label">Decision</span>
+                    <span class="metric-value text-wrap" id="evidDecision">-</span>
+                </div>
             </div>
         </div>
     </div>

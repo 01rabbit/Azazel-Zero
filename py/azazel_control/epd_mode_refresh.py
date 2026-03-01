@@ -7,15 +7,19 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict
 
 EPD_STATE = Path("/run/azazel/epd_state.json")
 EPD_LAST_RENDER = Path("/run/azazel/epd_last_render.json")
+SURI_EPD_STATE = Path("/run/azazel/suri_epd_state.json")
 RUNTIME_SNAPSHOT_CANDIDATES = (
     Path("/run/azazel-gadget/ui_snapshot.json"),
     Path("/run/azazel-zero/ui_snapshot.json"),
 )
+MODE_CHOICES = {"portal", "shield", "scapegoat"}
+USER_STATES = {"SAFE", "CHECKING", "LIMITED", "CONTAINED", "DECEPTION"}
 
 
 def _safe_load(path: Path) -> Dict[str, Any]:
@@ -44,83 +48,232 @@ def _read_live_ssid(upstream_if: str) -> str:
     return "No SSID"
 
 
-def _normal_render_spec(payload: Dict[str, Any], mode_label: str, risk_status: str) -> Dict[str, Any]:
-    live_ssid = ""
-    live_signal: int | None = None
-    live_wifi_state = ""
+def _first_snapshot() -> Dict[str, Any]:
     for path in RUNTIME_SNAPSHOT_CANDIDATES:
         data = _safe_load(path)
-        if not isinstance(data, dict):
-            continue
-        conn = data.get("connection")
-        if isinstance(conn, dict):
-            live_wifi_state = str(conn.get("wifi_state", "")).strip().upper()
-        raw_ssid = str(data.get("ssid", "")).strip()
-        if raw_ssid and raw_ssid != "-":
-            live_ssid = raw_ssid
-        raw_signal = data.get("signal_dbm")
-        try:
-            live_signal = int(float(str(raw_signal).strip()))
-        except Exception:
-            pass
-        if live_ssid or live_signal is not None:
-            break
+        if isinstance(data, dict) and data:
+            return data
+    return {}
 
-    ssid = live_ssid or str(payload.get("ssid", "")).strip() or _read_live_ssid(str(payload.get("upstream_if", "")).strip())
-    signal = live_signal if live_wifi_state == "CONNECTED" else None
+
+def _clean_mode_label(value: object, default: str = "SHIELD") -> str:
+    raw = str(value or "").strip().upper()
+    if not raw:
+        raw = default
+    return raw[:12]
+
+
+def _normal_render_spec(
+    payload: Dict[str, Any],
+    mode_label: str,
+    risk_status: str,
+    snapshot: Dict[str, Any],
+    suspicion: int = 0,
+) -> Dict[str, Any]:
+    conn = snapshot.get("connection")
+    wifi_state = ""
+    if isinstance(conn, dict):
+        wifi_state = str(conn.get("wifi_state", "")).strip().upper()
+
+    raw_ssid = str(snapshot.get("ssid", "")).strip()
+    ssid = raw_ssid if raw_ssid and raw_ssid != "-" else ""
+    if not ssid:
+        ssid = str(payload.get("ssid", "")).strip()
+    if not ssid:
+        ssid = _read_live_ssid(str(payload.get("upstream_if", "")).strip())
+
+    signal: int | None = None
+    if wifi_state == "CONNECTED":
+        try:
+            signal = int(float(str(snapshot.get("signal_dbm", "")).strip()))
+        except Exception:
+            signal = None
+
     return {
         "state": "normal",
-        "mode_label": str(mode_label or "SHIELD").strip().upper()[:12],
+        "mode_label": _clean_mode_label(mode_label),
         "ssid": ssid,
         "risk_status": str(risk_status or "UNKNOWN").strip().upper(),
-        "suspicion": 0,
+        "suspicion": int(suspicion),
         "signal": signal,
     }
 
 
-def _risk_status_from_snapshot() -> str:
-    for path in RUNTIME_SNAPSHOT_CANDIDATES:
-        data = _safe_load(path)
-        if not isinstance(data, dict):
-            continue
-        conn = data.get("connection")
-        if not isinstance(conn, dict):
-            continue
-        internet = str(conn.get("internet_check", "")).strip().upper()
-        if internet == "OK":
-            return "SAFE"
-        if internet == "FAIL":
-            return "FAIL"
-        if internet in ("N/A", "UNKNOWN"):
-            return "CHECKING"
+def _user_state_from_stage_name(stage_name: object) -> str:
+    name = str(stage_name or "").strip().upper()
+    mapping = {
+        "INIT": "CHECKING",
+        "PROBE": "CHECKING",
+        "NORMAL": "SAFE",
+        "DEGRADED": "LIMITED",
+        "CONTAIN": "CONTAINED",
+        "DECEPTION": "DECEPTION",
+    }
+    return mapping.get(name, "")
+
+
+def _normalized_user_state(data: Dict[str, Any]) -> str:
+    user_state = str(data.get("user_state", "")).strip().upper()
+    if user_state in USER_STATES:
+        return user_state
+    internal = data.get("internal")
+    if isinstance(internal, dict):
+        from_stage = _user_state_from_stage_name(internal.get("state_name", ""))
+        if from_stage:
+            return from_stage
+    return ""
+
+
+def _coerce_suspicion(data: Dict[str, Any]) -> int:
+    internal = data.get("internal")
+    if not isinstance(internal, dict):
+        return 0
+    try:
+        return int(float(str(internal.get("suspicion", 0)).strip()))
+    except Exception:
+        return 0
+
+
+def _risk_from_connection(data: Dict[str, Any]) -> str:
+    conn = data.get("connection")
+    if not isinstance(conn, dict):
+        return "UNKNOWN"
+    internet = str(conn.get("internet_check", "")).strip().upper()
+    if internet == "OK":
+        return "SAFE"
+    if internet == "FAIL":
+        return "LIMITED"
+    if internet in ("N/A", "UNKNOWN"):
+        return "CHECKING"
     return "UNKNOWN"
+
+
+def _risk_and_suspicion_from_snapshot(data: Dict[str, Any], use_user_state: bool = True) -> tuple[str, int]:
+    suspicion = _coerce_suspicion(data)
+    if use_user_state:
+        user_state = _normalized_user_state(data)
+        if user_state:
+            return user_state, suspicion
+    return _risk_from_connection(data), suspicion
+
+
+def _alerts_in_scapegoat_enabled() -> bool:
+    return os.environ.get("AZAZEL_EPD_ALERTS_IN_SCAPEGOAT", "0").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _alerts_allowed(mode: str) -> bool:
+    return str(mode).strip().lower() != "scapegoat" or _alerts_in_scapegoat_enabled()
+
+
+def _safe_msg(value: object, default: str) -> str:
+    raw = str(value or "").replace("\r", " ").replace("\n", " ").strip()
+    if not raw:
+        raw = default
+    return raw[:20]
+
+
+def _active_suri_alert(now: float) -> Dict[str, Any]:
+    data = _safe_load(SURI_EPD_STATE)
+    if not isinstance(data, dict) or not data:
+        return {}
+    state = str(data.get("state", "")).strip().lower()
+    if state not in {"warning", "danger"}:
+        return {}
+    msg = _safe_msg(data.get("msg", ""), "ATTACK DETECTED")
+
+    try:
+        expires_at = int(float(str(data.get("expires_at", "")).strip()))
+    except Exception:
+        expires_at = 0
+    if expires_at > 0 and now > float(expires_at):
+        return {}
+
+    try:
+        ts = int(float(str(data.get("ts", "0")).strip()))
+    except Exception:
+        ts = 0
+    if expires_at <= 0:
+        ttl_default = int(float(os.environ.get("AZAZEL_SURI_ALERT_TTL_SEC", "120")))
+        ttl = max(1, ttl_default)
+        if ts > 0 and (now - float(ts)) > ttl:
+            return {}
+    return {"state": state, "msg": msg}
+
+
+def _mode_label_from_payload(mode: str, payload: Dict[str, Any]) -> str:
+    if mode in MODE_CHOICES:
+        return mode
+    fallback = str(payload.get("target_mode", "")).strip().lower()
+    if fallback in MODE_CHOICES:
+        return fallback
+    return "shield"
+
+
+def _limited_msg_from_snapshot(snapshot: Dict[str, Any]) -> str:
+    recommendation = str(snapshot.get("recommendation", "")).strip()
+    if recommendation:
+        return _safe_msg(recommendation, "LIMITED")
+    reasons = snapshot.get("reasons")
+    if isinstance(reasons, list) and reasons:
+        return _safe_msg(reasons[0], "LIMITED")
+    return "LIMITED"
+
+
+def _risk_from_payload_internet(payload: Dict[str, Any]) -> str:
+    net = str(payload.get("internet", "unknown")).strip().upper()
+    if net == "OK":
+        return "SAFE"
+    if net == "FAIL":
+        return "LIMITED"
+    return "CHECKING"
 
 
 def _desired_render_spec(payload: Dict[str, Any]) -> Dict[str, Any]:
     mode = str(payload.get("mode", "")).strip().lower()
+    snapshot = _first_snapshot()
+    mode_label = _mode_label_from_payload(mode, payload)
 
     # Keep base screen during mode switch (no WARNING banner).
     if mode == "switching":
         target = str(payload.get("target_mode", "shield")).strip().lower()
         if target not in ("portal", "shield", "scapegoat"):
             target = "shield"
-        return _normal_render_spec(payload, target, "CHECKING")
+        return _normal_render_spec(payload, target, "CHECKING", snapshot, 0)
 
     if mode == "failed":
         return {"state": "danger", "msg": "MODE FAIL"}
 
-    if mode in ("portal", "shield", "scapegoat"):
-        # Prefer first-minute runtime snapshot for live internet verdict.
-        risk = _risk_status_from_snapshot()
+    if mode_label in MODE_CHOICES:
+        alerts_allowed = _alerts_allowed(mode_label)
+        suri_alert = _active_suri_alert(time.time())
+        if suri_alert and alerts_allowed:
+            return suri_alert
+
+        user_state = _normalized_user_state(snapshot)
+        risk, suspicion = _risk_and_suspicion_from_snapshot(snapshot, use_user_state=alerts_allowed)
+        attack = snapshot.get("attack")
+        if not isinstance(attack, dict):
+            attack = {}
+
+        if alerts_allowed:
+            if user_state == "CONTAINED":
+                return {"state": "danger", "msg": "ATTACK DETECTED"}
+            if user_state == "DECEPTION":
+                delay_active = bool(attack.get("canary_delay_active", False))
+                return {"state": "danger", "msg": "DELAY ACTIVE" if delay_active else "DECEPTION MODE"}
+            if user_state == "LIMITED":
+                return {"state": "warning", "msg": _limited_msg_from_snapshot(snapshot)}
+
         if risk == "UNKNOWN":
-            net = str(payload.get("internet", "unknown")).strip().upper()
-            if net == "OK":
-                risk = "SAFE"
-            elif net == "FAIL":
-                risk = "FAIL"
+            # Avoid stale mode-manager internet fallback when snapshot is present.
+            conn = snapshot.get("connection")
+            conn_has_signal = isinstance(conn, dict) and bool(str(conn.get("internet_check", "")).strip())
+            has_snapshot = bool(snapshot)
+            if (not has_snapshot) or (not conn_has_signal and not user_state):
+                risk = _risk_from_payload_internet(payload)
             else:
                 risk = "CHECKING"
-        return _normal_render_spec(payload, mode, risk)
+        return _normal_render_spec(payload, mode_label, risk, snapshot, suspicion)
 
     return {"state": "warning", "msg": "MODE N/A"}
 

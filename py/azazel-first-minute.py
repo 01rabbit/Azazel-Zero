@@ -25,6 +25,18 @@ from azazel_gadget.first_minute.state_machine import Stage
 from azazel_gadget.first_minute.tc import TcManager
 
 
+def _env_truthy(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    val = str(raw).strip().lower()
+    if val in {"1", "true", "yes", "on"}:
+        return True
+    if val in {"0", "false", "no", "off", ""}:
+        return False
+    return default
+
+
 def parse_args() -> argparse.Namespace:
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument("--config", default=str(REPO_ROOT / "configs/first_minute.yaml"), help="設定ファイルパス (YAML)")
@@ -77,7 +89,7 @@ def setup_logging(cfg: FirstMinuteConfig) -> None:
     except OSError:
         pass
     # Phase 3: enable DEBUG for suricata diagnostics
-    level = logging.DEBUG if os.environ.get("AZAZEL_DEBUG") else logging.INFO
+    level = logging.DEBUG if _env_truthy("AZAZEL_DEBUG", default=False) else logging.INFO
     logging.basicConfig(level=level, handlers=handlers, format="%(asctime)s %(levelname)s %(message)s")
 
 

@@ -627,17 +627,24 @@ def _process_running(pattern: str) -> bool:
 
 def get_monitoring_state() -> Dict[str, str]:
     """Return ON/OFF status for local monitoring daemons."""
-    # Prefer systemd state to avoid pidfile permission issues
-    opencanary_ok = _service_active("opencanary@az_canary.service") or _service_active("opencanary.service")
-    suricata_ok = _service_active("suricata.service")
-    ntfy_ok = _service_active("ntfy.service") and _ntfy_health_ok()
-    opencanary_pid = Path("/home/azazel/canary-venv/bin/opencanaryd.pid")
-    suricata_pid = Path("/run/suricata.pid")
-    return {
-        "opencanary": "ON" if (opencanary_ok or _pid_running(opencanary_pid, "opencanary") or _process_running("[o]pencanary.tac")) else "OFF",
-        "suricata": "ON" if (suricata_ok or _pid_running(suricata_pid, "suricata")) else "OFF",
-        "ntfy": "ON" if ntfy_ok else "OFF",
-    }
+    try:
+        from azazel_gadget.monitoring_state import get_monitoring_state as _shared_get_monitoring_state
+
+        return _shared_get_monitoring_state()
+    except Exception:
+        # Fallback for partial deployments.
+        opencanary_ok = _service_active("opencanary@az_canary.service") or _service_active("opencanary.service")
+        suricata_ok = _service_active("suricata.service")
+        ntfy_ok = _service_active("ntfy.service") and _ntfy_health_ok()
+        opencanary_pid = Path("/home/azazel/canary-venv/bin/opencanaryd.pid")
+        suricata_pid = Path("/run/suricata.pid")
+        return {
+            "opencanary": "ON"
+            if (opencanary_ok or _pid_running(opencanary_pid, "opencanary") or _process_running("[o]pencanary.tac"))
+            else "OFF",
+            "suricata": "ON" if (suricata_ok or _pid_running(suricata_pid, "suricata")) else "OFF",
+            "ntfy": "ON" if ntfy_ok else "OFF",
+        }
 
 
 def get_mode_state() -> Dict[str, Any]:

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import subprocess
 from typing import Iterable, Tuple
 
 from .state_machine import Stage
+
+_LOG = logging.getLogger(__name__)
 
 
 class TcManager:
@@ -28,7 +31,26 @@ class TcManager:
         self._deception_active = False
 
     def _run(self, args: list[str]) -> None:
-        subprocess.run(["tc"] + args, check=False)
+        result = subprocess.run(
+            ["tc"] + args,
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        rc = getattr(result, "returncode", 0)
+        if not isinstance(rc, int) or rc == 0:
+            return
+
+        stderr = (getattr(result, "stderr", "") or "").strip()
+        cmd_text = "tc " + " ".join(args)
+        # Deleting a non-existent root qdisc is expected during transition/cleanup.
+        if args[:3] == ["qdisc", "del", "dev"] and (
+            "Cannot delete qdisc with handle of zero" in stderr or "No such file or directory" in stderr
+        ):
+            _LOG.debug("tc benign: %s -> %s", cmd_text, stderr or f"rc={rc}")
+            return
+
+        _LOG.warning("tc command failed: %s (rc=%s, stderr=%s)", cmd_text, rc, stderr or "<empty>")
 
     def apply(self, stage: Stage) -> None:
         # Stage-applied shaping and targeted deception-delay must not conflict.
