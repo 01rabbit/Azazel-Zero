@@ -207,6 +207,12 @@ sudo ./install.sh --resume
 スキーマ補助/移行は `py/azazel_gadget/path_schema.py` で提供しています。
 旧パス互換は `2026-12-31` までを目安に維持予定です。
 
+## 運用ノート
+
+- インターフェース間の状態整合: Web UI と TUI は同じ snapshot モデルを参照し、EPD 更新も同じランタイム状態ソースを優先します。
+- USB NAT 表示: `connection.usb_nat` は実際のルーティング/NAT 状態に基づいて判定されるため、実運用の転送可否を反映します。
+- ログ詳細度の制御: `AZAZEL_DEBUG` は厳密な真偽値として解釈されます（`1/true/yes/on` でデバッグ有効、`0/false/no/off` で無効）。
+
 ## ディレクトリ構成（主要）
 
 | Path | 内容 |

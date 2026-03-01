@@ -250,6 +250,12 @@ Both naming schemas are supported:
 Schema helpers and migration are implemented in `py/azazel_gadget/path_schema.py`.
 Legacy path compatibility is planned through `2026-12-31`.
 
+## Operational Notes
+
+- State consistency across interfaces: Web UI and TUI use the same snapshot model, and EPD refresh prioritizes the same runtime state source.
+- USB NAT indicator: `connection.usb_nat` is based on active routing/NAT state, so it reflects actual forwarding availability rather than interface-name guesses.
+- Log verbosity control: `AZAZEL_DEBUG` is treated as a strict boolean (`1/true/yes/on` to enable debug, `0/false/no/off` to disable).
+
 ## Repository structure (main)
 
 | Path | Meaning |
