@@ -255,6 +255,7 @@ class FirstMinuteController:
         self.epd_enabled = os.environ.get("AZAZEL_EPD", "1").strip().lower() not in ("0", "false", "no", "off")
         self.health_last_update = 0.0
         self.health_last_fp: Optional[tuple] = None
+        self._usb_route_cache: Dict[Tuple[str, str, str], Tuple[float, bool]] = {}
         try:
             self.health_min_interval = float(os.environ.get("AZAZEL_HEALTH_INTERVAL", "20"))
         except ValueError:
@@ -867,6 +868,81 @@ class FirstMinuteController:
             return "FAIL"
         return prev if prev else "UNKNOWN"
 
+    def _is_usb_route_active(self, upstream_iface: str, downstream_iface: str) -> bool:
+        up = str(upstream_iface or "").strip()
+        down = str(downstream_iface or "").strip()
+        if not up or not down or up == down:
+            return False
+
+        mgmt_subnet = str(self.cfg.interfaces.get("mgmt_subnet", "10.55.0.0/24") or "10.55.0.0/24").strip()
+        key = (up, down, mgmt_subnet)
+        now = time.time()
+        cache = getattr(self, "_usb_route_cache", {})
+        if isinstance(cache, dict):
+            cached = cache.get(key)
+            if isinstance(cached, tuple) and len(cached) == 2:
+                ts, value = cached
+                try:
+                    if (now - float(ts)) < 5.0:
+                        return bool(value)
+                except Exception:
+                    pass
+
+        detected = self._detect_usb_route_active(up, down, mgmt_subnet)
+        if not isinstance(cache, dict):
+            cache = {}
+        cache[key] = (now, bool(detected))
+        self._usb_route_cache = cache
+        return bool(detected)
+
+    def _detect_usb_route_active(self, upstream_iface: str, downstream_iface: str, mgmt_subnet: str) -> bool:
+        up = re.escape(upstream_iface)
+        down = re.escape(downstream_iface)
+        subnet = re.escape(mgmt_subnet)
+
+        # Prefer nftables inspection (current default backend).
+        try:
+            res = subprocess.run(
+                ["nft", "list", "ruleset"],
+                capture_output=True,
+                text=True,
+                timeout=2.0,
+                check=False,
+            )
+            if res.returncode == 0 and res.stdout:
+                text = res.stdout
+                patterns = (
+                    rf'ip saddr {subnet}\s+oifname "{up}"[^\n]*masquerade',
+                    rf'ip saddr {subnet}\s+oifname != "{down}"[^\n]*masquerade',
+                    rf'iifname "{down}"\s+oifname "{up}"[^\n]*accept',
+                )
+                if any(re.search(pat, text) for pat in patterns):
+                    return True
+        except Exception:
+            pass
+
+        # Legacy fallback: iptables NAT rules.
+        try:
+            res = subprocess.run(
+                ["iptables", "-t", "nat", "-S"],
+                capture_output=True,
+                text=True,
+                timeout=2.0,
+                check=False,
+            )
+            if res.returncode == 0 and res.stdout:
+                text = res.stdout
+                patterns = (
+                    rf"-A POSTROUTING .* -s {subnet} .* -o {up} .*MASQUERADE",
+                    rf"-A POSTROUTING .* -s {subnet} .* ! -o {down} .*MASQUERADE",
+                )
+                if any(re.search(pat, text) for pat in patterns):
+                    return True
+        except Exception:
+            pass
+
+        return False
+
     def _normalize_connection_state(self, raw: Optional[Dict[str, object]]) -> Dict[str, object]:
         normalized = self._default_connection_state()
         if isinstance(raw, dict):
@@ -951,6 +1027,7 @@ class FirstMinuteController:
             link = {}
 
         upstream_iface = str(self.cfg.interfaces.get("upstream", "") or "").strip()
+        downstream_iface = str(self.cfg.interfaces.get("downstream", "") or "").strip()
         live_connected = str(link.get("connected", "0")) == "1"
 
         if live_connected:
@@ -968,6 +1045,7 @@ class FirstMinuteController:
             merged["bssid"] = bssid
             merged["ip_wlan"] = "" if ip_wlan == "-" else ip_wlan
             merged["gateway_ip"] = gateway
+            merged["usb_nat"] = "ON" if self._is_usb_route_active(upstream_iface, downstream_iface) else "OFF"
             if not merged.get("captive_probe_iface"):
                 merged["captive_probe_iface"] = upstream_iface
             return merged
@@ -975,6 +1053,7 @@ class FirstMinuteController:
         # If live link is down, at minimum avoid stale CONNECTED state.
         if str(merged.get("wifi_state", "") or "").upper() == "CONNECTED":
             merged["wifi_state"] = "DISCONNECTED"
+        merged["usb_nat"] = "OFF"
         return merged
 
     def write_snapshot(self, summary: Dict[str, object], link_meta: Dict[str, object], skip_sync: bool = False) -> None:

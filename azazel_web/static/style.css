@@ -113,6 +113,13 @@ body {
     margin-bottom: 12px;
 }
 
+.grid-secondary {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
 /* Cards - Compact Design */
 .card {
     background: var(--bg-card);
@@ -369,6 +376,11 @@ body {
     grid-column: 1 / -1;
 }
 
+.grid-secondary .card-evidence,
+.grid-secondary .card-notifications {
+    grid-column: auto;
+}
+
 .event-log-wrap {
     margin-top: 10px;
     border: 1px solid rgba(255, 255, 255, 0.15);
@@ -586,6 +598,10 @@ body {
     }
     
     .grid {
+        grid-template-columns: 1fr;
+    }
+
+    .grid-secondary {
         grid-template-columns: 1fr;
     }
     

@@ -219,6 +219,15 @@ def _limited_msg_from_snapshot(snapshot: Dict[str, Any]) -> str:
     return "LIMITED"
 
 
+def _risk_from_payload_internet(payload: Dict[str, Any]) -> str:
+    net = str(payload.get("internet", "unknown")).strip().upper()
+    if net == "OK":
+        return "SAFE"
+    if net == "FAIL":
+        return "LIMITED"
+    return "CHECKING"
+
+
 def _desired_render_spec(payload: Dict[str, Any]) -> Dict[str, Any]:
     mode = str(payload.get("mode", "")).strip().lower()
     snapshot = _first_snapshot()
@@ -256,11 +265,12 @@ def _desired_render_spec(payload: Dict[str, Any]) -> Dict[str, Any]:
                 return {"state": "warning", "msg": _limited_msg_from_snapshot(snapshot)}
 
         if risk == "UNKNOWN":
-            net = str(payload.get("internet", "unknown")).strip().upper()
-            if net == "OK":
-                risk = "SAFE"
-            elif net == "FAIL":
-                risk = "LIMITED"
+            # Avoid stale mode-manager internet fallback when snapshot is present.
+            conn = snapshot.get("connection")
+            conn_has_signal = isinstance(conn, dict) and bool(str(conn.get("internet_check", "")).strip())
+            has_snapshot = bool(snapshot)
+            if (not has_snapshot) or (not conn_has_signal and not user_state):
+                risk = _risk_from_payload_internet(payload)
             else:
                 risk = "CHECKING"
         return _normal_render_spec(payload, mode_label, risk, snapshot, suspicion)

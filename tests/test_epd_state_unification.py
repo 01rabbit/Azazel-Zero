@@ -57,6 +57,28 @@ class EpdModeRefreshStateTests(unittest.TestCase):
         self.assertEqual(render.get("state"), "normal")
         self.assertEqual(render.get("risk_status"), "SAFE")
 
+    def test_payload_internet_fallback_is_not_used_when_snapshot_exists(self):
+        payload = {"mode": "shield", "internet": "FAIL"}
+        snapshot = {
+            "internal": {"suspicion": 1},
+            "connection": {"internet_check": "UNKNOWN"},
+            "ssid": "TestAP",
+            "signal_dbm": "-55",
+        }
+        with patch.object(epd_mode_refresh, "_first_snapshot", return_value=snapshot):
+            with patch.object(epd_mode_refresh, "_active_suri_alert", return_value={}):
+                render = epd_mode_refresh._desired_render_spec(payload)
+        self.assertEqual(render.get("state"), "normal")
+        self.assertEqual(render.get("risk_status"), "CHECKING")
+
+    def test_payload_internet_fallback_used_when_snapshot_missing(self):
+        payload = {"mode": "shield", "internet": "FAIL"}
+        with patch.object(epd_mode_refresh, "_first_snapshot", return_value={}):
+            with patch.object(epd_mode_refresh, "_active_suri_alert", return_value={}):
+                render = epd_mode_refresh._desired_render_spec(payload)
+        self.assertEqual(render.get("state"), "normal")
+        self.assertEqual(render.get("risk_status"), "LIMITED")
+
 
 class FirstMinuteEpdTriggerTests(unittest.TestCase):
     def test_maybe_update_epd_triggers_unified_refresh(self):
@@ -102,12 +124,13 @@ class FirstMinuteEpdTriggerTests(unittest.TestCase):
 class FirstMinuteConnectionReconcileTests(unittest.TestCase):
     def _mk_controller(self):
         ctrl = object.__new__(FirstMinuteController)
-        ctrl.cfg = SimpleNamespace(interfaces={"upstream": "wlan0"})
+        ctrl.cfg = SimpleNamespace(interfaces={"upstream": "wlan0", "downstream": "usb0"})
         ctrl.last_probe = None
         ctrl._resolved_captive_probe_iface = "wlan0"
         ctrl._resolved_captive_probe_reason = "NOT_CHECKED"
         ctrl._get_interface_ip = Mock(return_value="192.168.40.184")
         ctrl._default_gateway_for_iface = Mock(return_value="192.168.40.1")
+        ctrl._is_usb_route_active = Mock(return_value=True)
         return ctrl
 
     def test_reconcile_promotes_connecting_to_connected_on_live_link(self):
@@ -129,6 +152,7 @@ class FirstMinuteConnectionReconcileTests(unittest.TestCase):
         merged = FirstMinuteController._reconcile_connection_with_live_link(ctrl, base, link_meta)
         normalized = FirstMinuteController._normalize_connection_state(ctrl, merged)
         self.assertEqual(normalized.get("wifi_state"), "CONNECTED")
+        self.assertEqual(normalized.get("usb_nat"), "ON")
         self.assertEqual(normalized.get("internet_check"), "OK")
         self.assertEqual(normalized.get("ssid"), "JCOM_NYRY")
         self.assertEqual(normalized.get("ip_wlan"), "192.168.40.184")
@@ -145,9 +169,11 @@ class FirstMinuteConnectionReconcileTests(unittest.TestCase):
             "captive_portal": "NA",
         }
         link_meta = {"link": {"connected": "0"}}
+        ctrl._is_usb_route_active = Mock(return_value=False)
         merged = FirstMinuteController._reconcile_connection_with_live_link(ctrl, base, link_meta)
         normalized = FirstMinuteController._normalize_connection_state(ctrl, merged)
         self.assertEqual(normalized.get("wifi_state"), "DISCONNECTED")
+        self.assertEqual(normalized.get("usb_nat"), "OFF")
         self.assertEqual(normalized.get("internet_check"), "N/A")
         self.assertEqual(normalized.get("ssid"), "")
         self.assertEqual(normalized.get("ip_wlan"), "")

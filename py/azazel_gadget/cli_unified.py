@@ -17,6 +17,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -280,34 +281,6 @@ def _fill_iface_defaults(data: Dict[str, object]) -> None:
             data[key] = val
 
 
-def _get_interface_ip(interface: str) -> str:
-    """
-    Get IP address of specified network interface.
-    Returns IP address string or "-" if not found.
-    """
-    try:
-        import subprocess
-        result = subprocess.run(
-            ["ip", "-4", "addr", "show", interface],
-            capture_output=True,
-            text=True,
-            timeout=2
-        )
-        if result.returncode == 0:
-            for line in result.stdout.split("\n"):
-                if "inet " in line:
-                    # Format: "    inet 192.168.1.100/24 brd ..."
-                    parts = line.strip().split()
-                    if len(parts) >= 2:
-                        ip_cidr = parts[1]
-                        # Remove /24 suffix
-                        ip_addr = ip_cidr.split("/")[0]
-                        return ip_addr
-    except Exception:
-        pass
-    return "-"
-
-
 def _parse_signal_dbm(raw_val) -> Optional[int]:
     """Normalize signal strength to an int dBm if possible."""
     try:
@@ -392,6 +365,13 @@ def _ntfy_health_ok() -> bool:
 
 
 def _collect_monitoring_state() -> Dict[str, str]:
+    try:
+        from azazel_gadget.monitoring_state import get_monitoring_state as _shared_get_monitoring_state
+
+        return _shared_get_monitoring_state()
+    except Exception:
+        pass
+
     opencanary_ok = _service_active("opencanary@az_canary.service") or _service_active("opencanary.service")
     suricata_ok = _service_active("suricata.service")
     ntfy_ok = _service_active("ntfy.service") and _ntfy_health_ok()
@@ -439,42 +419,6 @@ def _user_state_from_stage_name(stage_name: str) -> str:
     if name == "DECEPTION":
         return "DECEPTION"
     return "CHECKING"
-
-
-def export_epd_snapshot(snap: Snapshot) -> None:
-    """
-    EPD表示用にスナップショットをエクスポート
-    TUIで計算済みのrisk_scoreやrecommendationをEPDと共有して重複計算を避ける
-    """
-    try:
-        from dataclasses import asdict
-        
-        # EPDに必要な最小限のフィールドのみをエクスポート
-        epd_data = {
-            "risk_score": snap.risk_score,
-            "recommendation": snap.recommendation,
-            "user_state": snap.user_state,
-            "threat_level": snap.threat_level,
-            "signal_dbm": str(snap.signal_dbm),
-            "ssid": snap.ssid,
-            "suricata_critical": snap.suricata_critical,
-            "suricata_warning": snap.suricata_warning,
-            "cpu_percent": snap.cpu_percent,
-            "temp_c": snap.temp_c,
-            "session_uptime": snap.session_uptime,
-            "download_mbps": snap.download_mbps,
-            "upload_mbps": snap.upload_mbps,
-            "packet_loss_percent": snap.packet_loss_percent,
-            "dns_avg_ms": snap.dns_avg_ms,
-            "now_time": snap.now_time,
-        }
-        
-        # /tmpに保存（権限問題を回避）
-        epd_path = Path("/tmp/epd_snapshot.json")
-        epd_path.write_text(json.dumps(epd_data, ensure_ascii=False), encoding="utf-8")
-    except Exception:
-        # エクスポート失敗してもTUI動作に影響しない
-        pass
 
 
 def _parse_log_ts(line: str) -> float:
@@ -566,14 +510,6 @@ def load_snapshot_from_log() -> Optional[Snapshot]:
             _fill_iface_defaults(data)
             return build_snapshot(data, source="LOG")
     return None
-
-
-# セッション開始時刻（グローバル）
-_session_start_time = time.time()
-
-# スループット計算用の前回統計（優先度：低）
-_last_net_stats = {}
-_last_net_time = time.time()
 
 
 def calculate_risk_score(snap: Snapshot) -> int:
@@ -710,159 +646,9 @@ def load_snapshot() -> Snapshot:
             except Exception:
                 pass
             snap = build_snapshot(sample, source="SAMPLE")
-    
-    # WiFiチャンネルスキャンを実行（上りインターフェースを使用）
-    try:
-        # 相対インポートまたは直接インポートを試行
-        try:
-            from .sensors.wifi_channel_scanner import scan_wifi_channels
-        except ImportError:
-            import sys
-            from pathlib import Path
-            sensors_path = Path(__file__).parent / "sensors"
-            if str(sensors_path) not in sys.path:
-                sys.path.insert(0, str(sensors_path.parent))
-            from sensors.wifi_channel_scanner import scan_wifi_channels
-        
-        scan_result = scan_wifi_channels(snap.up_if)
-        if scan_result.get("scan_success"):
-            snap.channel_congestion = scan_result.get("congestion_level", "unknown")
-            snap.channel_ap_count = scan_result.get("ap_count", 0)
-            snap.recommended_channel = scan_result.get("recommended_channel", -1)
-            # デバッグ情報をevidenceに追加
-            snap.evidence.append(f"🔍 Scan: {snap.channel_ap_count} APs, {snap.channel_congestion}")
-        else:
-            # スキャン失敗時の情報を追加
-            error_msg = scan_result.get("error", "scan failed")
-            snap.evidence.append(f"⚠️ Scan failed: {error_msg}")
-    except Exception as e:
-        # スキャン失敗時はデフォルト値を保持し、エラーをevidenceに記録
-        snap.evidence.append(f"⚠️ Scan error: {str(e)}")
-    
-    # システムメトリクスを収集
-    try:
-        try:
-            from .sensors.system_metrics import collect_all_metrics
-        except ImportError:
-            import sys
-            from pathlib import Path
-            sensors_path = Path(__file__).parent / "sensors"
-            if str(sensors_path) not in sys.path:
-                sys.path.insert(0, str(sensors_path.parent))
-            from sensors.system_metrics import collect_all_metrics
-        
-        metrics = collect_all_metrics(snap.up_if, snap.down_if)
-        snap.cpu_percent = metrics.get("cpu_percent", 0.0)
-        mem = metrics.get("memory", {})
-        snap.mem_percent = mem.get("percent", 0)
-        snap.mem_used_mb = mem.get("used_mb", 0)
-        snap.mem_total_mb = mem.get("total_mb", 512)
-        snap.temp_c = metrics.get("temperature_c", 0.0) or 0.0
-        
-        # スループット計算（前回値との差分）（優先度：低）
-        global _last_net_stats, _last_net_time
-        current_time = time.time()
-        net_stats = metrics.get("network", {})
-        
-        if _last_net_stats.get(snap.up_if):
-            time_diff = current_time - _last_net_time
-            if time_diff > 0:
-                last_rx = _last_net_stats[snap.up_if].get("rx_bytes", 0)
-                last_tx = _last_net_stats[snap.up_if].get("tx_bytes", 0)
-                curr_rx = net_stats.get("rx_bytes", 0)
-                curr_tx = net_stats.get("tx_bytes", 0)
-                
-                rx_diff = max(0, curr_rx - last_rx)
-                tx_diff = max(0, curr_tx - last_tx)
-                
-                # bytes/sec -> Mbps
-                snap.download_mbps = (rx_diff / time_diff) * 8 / 1000000
-                snap.upload_mbps = (tx_diff / time_diff) * 8 / 1000000
-        
-        # 次回のために保存
-        _last_net_stats[snap.up_if] = net_stats
-        _last_net_time = current_time
-        
-        # Suricataアラート
-        alerts = metrics.get("suricata_alerts", {})
-        snap.suricata_critical = alerts.get("critical", 0)
-        snap.suricata_warning = alerts.get("warning", 0)
-        snap.suricata_info = alerts.get("info", 0)
-    except Exception:
-        pass
-    
-    # ネットワーク解析（優先度：中）
-    try:
-        try:
-            from .sensors.network_analytics import get_analytics
-        except ImportError:
-            import sys
-            from pathlib import Path
-            sensors_path = Path(__file__).parent / "sensors"
-            if str(sensors_path) not in sys.path:
-                sys.path.insert(0, str(sensors_path.parent))
-            from sensors.network_analytics import get_analytics
-        
-        analytics = get_analytics()
-        
-        # 状態遷移の記録（前回の状態と比較）
-        current_state = snap.user_state
-        # グローバル変数で前回の状態を記憶（簡易版）
-        if not hasattr(load_snapshot, 'last_state'):
-            load_snapshot.last_state = None
-        
-        if load_snapshot.last_state and load_snapshot.last_state != current_state:
-            # 状態が変化したら記録
-            if not hasattr(load_snapshot, 'state_start_time'):
-                load_snapshot.state_start_time = time.time()
-            
-            duration = int(time.time() - load_snapshot.state_start_time)
-            analytics.add_state_transition(load_snapshot.last_state, current_state, duration)
-            load_snapshot.state_start_time = time.time()
-        
-        load_snapshot.last_state = current_state
-        
-        # パケットロスとレイテンシ測定（軽量化のためcount=3）
-        # ping_result = analytics.measure_packet_loss("8.8.8.8", 3)
-        # snap.packet_loss_percent = ping_result.get("loss_percent", 0.0)
-        # snap.latency_avg_ms = ping_result.get("avg_rtt_ms", 0.0)
-        # snap.latency_trend = analytics.get_ping_trend()
-        
-        # DNS統計
-        dns_stats = analytics.get_dns_stats()
-        snap.dns_avg_ms = dns_stats.get("avg_ms", 0.0)
-        snap.dns_cache_hit_rate = dns_stats.get("cache_hit_rate", 0)
-        snap.dns_timeouts = dns_stats.get("timeouts", 0)
-        
-        # DNS blockedイベントからドメインを記録
-        dns_blocked = snap.dns_stats.get("blocked", 0)
-        if dns_blocked > 0:
-            # evidenceからブロックされたドメインを抽出（簡易版）
-            for ev in snap.evidence[-10:]:
-                if "blocked" in ev.lower() and "dns" in ev.lower():
-                    # "DNS blocked: example.com" のような形式を想定
-                    parts = ev.split(":")
-                    if len(parts) >= 2:
-                        domain = parts[-1].strip().split()[0]  # 最初の単語を取得
-                        analytics.add_blocked_domain(domain)
-        
-        # 状態遷移タイムライン
-        snap.state_timeline = analytics.get_state_timeline()
-        
-        # ブロックトップ5
-        snap.top_blocked = analytics.get_top_blocked(5)
-        
-        # 累計トラフィック（start_statsはnoneで起動からの累計）
-        cumulative = analytics.get_traffic_cumulative(snap.up_if)
-        snap.traffic_total_mb = cumulative.get("total_mb", 0.0)
-        snap.traffic_download_mb = cumulative.get("download_mb", 0.0)
-        snap.traffic_upload_mb = cumulative.get("upload_mb", 0.0)
-        snap.traffic_packets = cumulative.get("packets", 0)
-    except Exception:
-        pass
-    
-    # セッション稼働時間（優先度：低）
-    snap.session_uptime = int(time.time() - _session_start_time)
+
+    # Keep shared fields aligned with WebUI/EPD by trusting control-plane snapshot values.
+    # TUI-specific enrichment should not overwrite contract fields.
 
     # WebUIと同じ監視サービス状態を補完
     try:
@@ -878,14 +664,7 @@ def load_snapshot() -> Snapshot:
     # 既存のrecommendationが空またはデフォルトの場合、自動推奨で上書き
     if not snap.recommendation or snap.recommendation == "Checking":
         snap.recommendation = auto_recommendation
-    
-    # wlan (upstream) の IP アドレスを取得
-    if snap.up_if and snap.up_if != "-":
-        snap.up_ip = _get_interface_ip(snap.up_if)
-    
-    # EPD用にスナップショットをエクスポート（計算済みデータを共有）
-    export_epd_snapshot(snap)
-    
+
     return snap
 
 
@@ -939,9 +718,38 @@ def _epd_fingerprint(snap: Snapshot) -> Tuple[str, str, str, Optional[int], str]
     return (snap.user_state.upper(), snap.ssid or "-", wlan_ip, sig_dbm, rec)
 
 
-def update_epd(snap: Snapshot, enable_epd: bool = True) -> None:
+_EPD_RATE_LOCK = threading.Lock()
+_last_tui_epd_update_mono = 0.0
+
+
+def _tui_epd_min_interval_sec() -> float:
+    raw = os.environ.get("AZAZEL_TUI_EPD_MIN_INTERVAL", "30").strip()
+    try:
+        return max(0.0, float(raw))
+    except Exception:
+        return 30.0
+
+
+def _consume_tui_epd_budget(force: bool = False) -> bool:
+    global _last_tui_epd_update_mono
+    now = time.monotonic()
+    min_interval = _tui_epd_min_interval_sec()
+    with _EPD_RATE_LOCK:
+        if force:
+            _last_tui_epd_update_mono = now
+            return True
+        if min_interval > 0 and _last_tui_epd_update_mono > 0:
+            if now - _last_tui_epd_update_mono < min_interval:
+                return False
+        _last_tui_epd_update_mono = now
+        return True
+
+
+def update_epd(snap: Snapshot, enable_epd: bool = True, force: bool = False) -> None:
     """Trigger unified EPD refresh pipeline (single renderer)."""
     if not enable_epd:
+        return
+    if not _consume_tui_epd_budget(force=force):
         return
     
     try:
@@ -1637,7 +1445,7 @@ def main():
     # Initial EPD update
     last_epd_fp: Optional[Tuple[str, str, str, Optional[int], str]] = None
     if enable_epd:
-        update_epd(snap, enable_epd)
+        update_epd(snap, enable_epd, force=True)
         last_epd_fp = _epd_fingerprint(snap)
 
     def _loop(stdscr):

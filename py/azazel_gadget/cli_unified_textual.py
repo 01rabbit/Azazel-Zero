@@ -24,7 +24,7 @@ from textual.widgets import Footer, Header, Static
 
 SnapshotLoader = Callable[[], Any]
 ActionSender = Callable[[str], Dict[str, Any]]
-EpdUpdater = Callable[[Any, bool], None]
+EpdUpdater = Callable[[Any, bool, bool], None]
 EpdFingerprint = Callable[[Any], Tuple[str, str, str, Optional[int], str]]
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -463,7 +463,7 @@ class AzazelTextualApp(App):
             f"Gateway: {self._safe_get(snap, 'gateway_ip', '-')}\n"
             f"Up/Down IF: {self._safe_get(snap, 'up_if', '-')}/{self._safe_get(snap, 'down_if', '-')}\n"
             f"WiFi: {connection.get('wifi_state', 'UNKNOWN')}  "
-            f"NAT: {connection.get('usb_nat', 'UNKNOWN')}  "
+            f"USB Route: {connection.get('usb_nat', 'UNKNOWN')}  "
             f"Internet: {connection.get('internet_check', 'UNKNOWN')}"
         )
         self.query_one("#connection", Static).update(Text(connection_text))
@@ -544,7 +544,7 @@ class AzazelTextualApp(App):
                 try:
                     fp = self._epd_fingerprint_fn(snap)
                     if initial or fp != self._last_epd_fp:
-                        await asyncio.to_thread(self._update_epd_fn, snap, self._enable_epd)
+                        await asyncio.to_thread(self._update_epd_fn, snap, self._enable_epd, initial)
                         self._last_epd_fp = fp
                 except Exception:
                     self._status_message = "Refresh complete (EPD update skipped)"
