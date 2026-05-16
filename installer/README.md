@@ -2,6 +2,10 @@
 
 **最小限の操作で完全インストール完了！**
 
+> [!IMPORTANT]
+> **開発ステータス（更新日: 2026-05-16）:** Azazel-Zero は開発終了です。  
+> 本インストーラと機能は Azazel-Gadget に統合済みです。
+
 ## 🚀 クイックスタート
 
 ### 初回インストール
@@ -49,7 +53,7 @@ sudo ./install.sh --with-webui --with-canary --with-ntfy --with-portal-viewer
 - **ネットワーク変更を検出**して再起動を促促
 
 ✅ **Stage 30: Configuration Deployment**
-- /etc/azazel-zero/ にテンプレート配置
+- /etc/azazel-gadget/ にテンプレート配置
 - 環境ファイル作成
 - 秘匿情報チェック
 
@@ -235,10 +239,10 @@ nslookup example.com 10.55.0.10
 
 ```bash
 # メイン設定
-sudo nano /etc/azazel-zero/first_minute.yaml
+sudo nano /etc/azazel-gadget/first_minute.yaml
 
 # DHCP/DNS 設定
-sudo nano /etc/azazel-zero/dnsmasq-first_minute.conf
+sudo nano /etc/azazel-gadget/dnsmasq-first_minute.conf
 
 # 修正後
 sudo systemctl restart azazel-first-minute.service
@@ -279,4 +283,4 @@ sudo systemctl restart azazel-first-minute.service
    ```
 
 3. GitHub Issues で報告
-   https://github.com/01rabbit/Azazel-Zero/issues
+   https://github.com/01rabbit/Azazel-Gadget/issues

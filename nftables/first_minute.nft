@@ -1,5 +1,5 @@
 #!/usr/sbin/nft -f
-# Template for Azazel-Zero First-Minute Control
+# Template for Azazel-Gadget First-Minute Control
 # Tokens @UPSTREAM@ @DOWNSTREAM@ @MGMT_IP@ @MGMT_SUBNET@ @PROBE_TTL@ @DYNAMIC_TTL@ are replaced by the controller.
 
 table inet azazel_fmc {

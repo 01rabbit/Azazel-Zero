@@ -1,5 +1,5 @@
 #!/bin/bash
-# Azazel-Zero: Suricata lightweight profile updater.
+# Azazel-Gadget: Suricata lightweight profile updater.
 set -euo pipefail
 
 if [[ ${EUID:-$(id -u)} -ne 0 ]]; then

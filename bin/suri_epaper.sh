@@ -10,6 +10,7 @@ for defaults in /etc/default/azazel-gadget /etc/default/azazel-zero; do
 done
 
 if [[ -z "${AZAZEL_ROOT:-}" ]]; then
+  # Legacy Azazel-Zero paths are kept only for backward compatibility.
   for candidate in \
     "$HOME/Azazel-Gadget" \
     "$HOME/Azazel-Zero" \

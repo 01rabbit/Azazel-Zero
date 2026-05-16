@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Azazel-Zero: Captive Portal detector
+# Azazel-Gadget: Captive Portal detector
 # Usage:
 #   portal_detect.sh [--iface <iface>]
 # Behavior:

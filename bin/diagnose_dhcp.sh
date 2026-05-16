@@ -1,11 +1,11 @@
 #!/bin/bash
-# Azazel-Zero DHCP/DNS トラブルシューティングスクリプト
+# Azazel-Gadget DHCP/DNS トラブルシューティングスクリプト
 # usb0のセットアップとdnsmasqの動作を診断します
 
 set -u
 
 echo "=================================================="
-echo "Azazel-Zero DHCP/DNS Diagnostics"
+echo "Azazel-Gadget DHCP/DNS Diagnostics"
 echo "=================================================="
 echo ""
 
@@ -71,7 +71,10 @@ echo ""
 
 # 5. dnsmasq設定ファイルの確認
 echo "[5] Checking dnsmasq configuration..."
-CONF_FILE="/etc/azazel-zero/dnsmasq-first_minute.conf"
+CONF_FILE="/etc/azazel-gadget/dnsmasq-first_minute.conf"
+if [ ! -f "$CONF_FILE" ] && [ -f "/etc/azazel-zero/dnsmasq-first_minute.conf" ]; then
+    CONF_FILE="/etc/azazel-zero/dnsmasq-first_minute.conf"  # backward compatibility
+fi
 if [ -f "$CONF_FILE" ]; then
     echo "✓ Config file exists: $CONF_FILE"
     

@@ -13,6 +13,12 @@
 
 Azazel-Gadget (formerly Azazel-Zero) is a portable defensive gateway for untrusted Wi-Fi environments on Raspberry Pi Zero 2 W / Pi 4-class devices.
 
+> [!IMPORTANT]
+> **Development status (updated: 2026-05-16):** Azazel-Zero is end-of-development.
+> All features and concepts have been integrated into Azazel-Gadget.
+> Use Azazel-Gadget as the only actively maintained line.
+> See also: [DEVELOPMENT_STATUS.md](./DEVELOPMENT_STATUS.md)
+
 <p align="center">
   <img src="images/Azazel-Gadget_logo.png" alt="Azazel-Gadget logo" width="540">
 </p>

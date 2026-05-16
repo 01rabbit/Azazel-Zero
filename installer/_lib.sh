@@ -337,7 +337,7 @@ prompt_reboot() {
 ║     sudo ./install.sh --resume                               ║
 ║                                                                ║
 ║  詳細は以下を参照：                                          ║
-║  https://github.com/01rabbit/Azazel-Zero/docs/INSTALLER.md  ║
+║  https://github.com/01rabbit/Azazel-Gadget/tree/main/installer  ║
 ║                                                                ║
 ╚════════════════════════════════════════════════════════════════╝
 
